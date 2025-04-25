@@ -19,7 +19,6 @@ import { AdminUserManagement } from "@/components/admin-user-management"
 import { AdminSystemSettings } from "@/components/admin-system-settings"
 import { AdminDashboardCharts } from "@/components/admin-dashboard-charts"
 import Link from "next/link"
-import Image from "next/image"
 
 export default function AdminDashboardPage() {
   const router = useRouter()
@@ -145,10 +144,10 @@ export default function AdminDashboardPage() {
       {/* Thoth Chat Flutuante */}
       {showThothChat && (
         <div className="fixed left-4 bottom-4 w-80 h-96 bg-white rounded-lg shadow-lg z-50 flex flex-col">
-          <div className="bg-purple-600 text-white p-3 rounded-t-lg flex justify-between items-center">
+          <div className="bg-gradient-to-r from-teal-600 to-amber-600 text-white p-3 rounded-t-lg flex justify-between items-center">
             <div className="flex items-center gap-2">
-              <div className="relative h-6 w-6">
-                <Image src="/thoth-icon.png" alt="Thoth" width={24} height={24} />
+              <div className="w-6 h-6 rounded-full overflow-hidden bg-white p-0.5">
+                <img src="/thoth-icon.png" alt="Thoth" className="w-full h-full object-cover" />
               </div>
               <span className="font-medium">Thoth - Assistente IA</span>
             </div>
@@ -160,10 +159,10 @@ export default function AdminDashboardPage() {
             <div className="flex justify-start mb-3">
               <div className="max-w-[80%] rounded-lg p-2 bg-white border border-gray-200">
                 <div className="flex items-center gap-1 mb-1">
-                  <div className="relative h-5 w-5">
-                    <Image src="/thoth-icon.png" alt="Thoth" width={20} height={20} />
+                  <div className="w-5 h-5 rounded-full overflow-hidden">
+                    <img src="/thoth-icon.png" alt="Thoth" className="w-full h-full object-cover" />
                   </div>
-                  <span className="text-xs font-medium text-purple-600">Thoth</span>
+                  <span className="text-xs font-medium text-amber-600">Thoth</span>
                 </div>
                 <p className="text-xs">
                   Olá! Como posso ajudar você hoje? Estou aqui para responder suas perguntas sobre o sistema.
@@ -186,10 +185,10 @@ export default function AdminDashboardPage() {
       {!showThothChat && (
         <button
           onClick={toggleThothChat}
-          className="fixed left-4 bottom-4 bg-purple-600 text-white p-3 rounded-full shadow-lg z-50 hover:bg-purple-700 transition-colors"
+          className="fixed left-4 bottom-4 bg-gradient-to-r from-teal-600 to-amber-600 text-white p-2 rounded-full shadow-lg z-50 hover:opacity-90 transition-opacity"
         >
-          <div className="relative h-6 w-6">
-            <Image src="/thoth-icon.png" alt="Thoth" width={24} height={24} className="animate-bounce" />
+          <div className="w-8 h-8 rounded-full overflow-hidden bg-white p-0.5 animate-bounce">
+            <img src="/thoth-icon.png" alt="Thoth" className="w-full h-full object-cover" />
           </div>
         </button>
       )}

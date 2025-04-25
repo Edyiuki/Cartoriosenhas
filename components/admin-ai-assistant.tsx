@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input"
 import { Brain, Send, BarChart3, Users, Clock, ArrowRight } from "lucide-react"
 import { obterEstatisticasAtendimento, obterEstatisticasGuiche } from "@/lib/estatisticas"
 import { analisarDadosComIA } from "@/lib/ia-analise"
-import Image from "next/image"
 
 export function AdminAIAssistant() {
   const [pergunta, setPergunta] = useState("")
@@ -205,10 +204,10 @@ export function AdminAIAssistant() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2">
-        <Card className="h-full">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Brain className="h-5 w-5 text-purple-600" />
+        <Card className="h-full border-teal-200">
+          <CardHeader className="bg-gradient-to-r from-teal-50 to-amber-50 border-b border-teal-100">
+            <CardTitle className="flex items-center gap-2 text-teal-800">
+              <Brain className="h-5 w-5 text-amber-600" />
               Assistente IA Thoth
             </CardTitle>
             <CardDescription>Converse com o assistente IA para obter insights e ajuda com o sistema</CardDescription>
@@ -229,16 +228,12 @@ export function AdminAIAssistant() {
                   >
                     {item.tipo === "resposta" && (
                       <div className="flex items-center gap-1 mb-2">
-                        <div className="relative h-6 w-6">
-                          <Image
-                            src="/thoth-icon.png"
-                            alt="Thoth"
-                            width={24}
-                            height={24}
-                            className={`${thothAtivo && index === historico.length - 1 ? "animate-bounce" : ""}`}
-                          />
+                        <div
+                          className={`w-6 h-6 rounded-full overflow-hidden ${thothAtivo && index === historico.length - 1 ? "animate-bounce" : ""}`}
+                        >
+                          <img src="/thoth-icon.png" alt="Thoth" className="w-full h-full object-cover" />
                         </div>
-                        <span className="text-sm font-medium text-purple-600">Thoth</span>
+                        <span className="text-sm font-medium text-amber-600">Thoth</span>
                       </div>
                     )}
                     <p className="text-sm whitespace-pre-line">{item.texto}</p>
@@ -250,20 +245,20 @@ export function AdminAIAssistant() {
                 <div className="flex justify-start">
                   <div className="max-w-[80%] rounded-lg p-3 bg-white border border-gray-200">
                     <div className="flex items-center gap-2">
-                      <div className="relative h-6 w-6">
-                        <Image src="/thoth-icon.png" alt="Thoth" width={24} height={24} className="animate-bounce" />
+                      <div className="w-6 h-6 rounded-full overflow-hidden animate-bounce">
+                        <img src="/thoth-icon.png" alt="Thoth" className="w-full h-full object-cover" />
                       </div>
                       <div className="flex gap-1">
                         <div
-                          className="w-2 h-2 rounded-full bg-purple-600 animate-bounce"
+                          className="w-2 h-2 rounded-full bg-amber-600 animate-bounce"
                           style={{ animationDelay: "0ms" }}
                         ></div>
                         <div
-                          className="w-2 h-2 rounded-full bg-purple-600 animate-bounce"
+                          className="w-2 h-2 rounded-full bg-amber-600 animate-bounce"
                           style={{ animationDelay: "150ms" }}
                         ></div>
                         <div
-                          className="w-2 h-2 rounded-full bg-purple-600 animate-bounce"
+                          className="w-2 h-2 rounded-full bg-amber-600 animate-bounce"
                           style={{ animationDelay: "300ms" }}
                         ></div>
                       </div>
@@ -291,57 +286,65 @@ export function AdminAIAssistant() {
 
       <div className="space-y-6">
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Perguntas Sugeridas</CardTitle>
+          <CardHeader className="pb-2 flex flex-col items-center">
+            <div className="w-24 h-24 rounded-full overflow-hidden mb-2 border-4 border-amber-300">
+              <img src="/thoth-avatar.png" alt="Thoth" className="w-full h-full object-cover" />
+            </div>
+            <CardTitle className="text-lg text-center">Assistente IA Thoth</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
-            <Button
-              variant="outline"
-              className="w-full justify-start text-left"
-              onClick={() => {
-                setPergunta("Qual é o desempenho atual dos guichês?")
-                handleEnviarPergunta()
-              }}
-            >
-              <BarChart3 className="h-4 w-4 mr-2" />
-              Qual é o desempenho atual dos guichês?
-            </Button>
+          <CardContent>
+            <p className="text-sm text-center text-gray-600 mb-4">
+              Assistente de IA inspirado no deus egípcio da sabedoria e conhecimento
+            </p>
+            <div className="space-y-2 text-sm">
+              <Button
+                variant="outline"
+                className="w-full justify-start text-left"
+                onClick={() => {
+                  setPergunta("Qual é o desempenho atual dos guichês?")
+                  handleEnviarPergunta()
+                }}
+              >
+                <BarChart3 className="h-4 w-4 mr-2" />
+                Qual é o desempenho atual dos guichês?
+              </Button>
 
-            <Button
-              variant="outline"
-              className="w-full justify-start text-left"
-              onClick={() => {
-                setPergunta("Como posso otimizar o fluxo de atendimento?")
-                handleEnviarPergunta()
-              }}
-            >
-              <ArrowRight className="h-4 w-4 mr-2" />
-              Como posso otimizar o fluxo de atendimento?
-            </Button>
+              <Button
+                variant="outline"
+                className="w-full justify-start text-left"
+                onClick={() => {
+                  setPergunta("Como posso otimizar o fluxo de atendimento?")
+                  handleEnviarPergunta()
+                }}
+              >
+                <ArrowRight className="h-4 w-4 mr-2" />
+                Como posso otimizar o fluxo de atendimento?
+              </Button>
 
-            <Button
-              variant="outline"
-              className="w-full justify-start text-left"
-              onClick={() => {
-                setPergunta("Quais são os tempos médios de atendimento?")
-                handleEnviarPergunta()
-              }}
-            >
-              <Clock className="h-4 w-4 mr-2" />
-              Quais são os tempos médios de atendimento?
-            </Button>
+              <Button
+                variant="outline"
+                className="w-full justify-start text-left"
+                onClick={() => {
+                  setPergunta("Quais são os tempos médios de atendimento?")
+                  handleEnviarPergunta()
+                }}
+              >
+                <Clock className="h-4 w-4 mr-2" />
+                Quais são os tempos médios de atendimento?
+              </Button>
 
-            <Button
-              variant="outline"
-              className="w-full justify-start text-left"
-              onClick={() => {
-                setPergunta("Quem é você, Thoth?")
-                handleEnviarPergunta()
-              }}
-            >
-              <Users className="h-4 w-4 mr-2" />
-              Quem é você, Thoth?
-            </Button>
+              <Button
+                variant="outline"
+                className="w-full justify-start text-left"
+                onClick={() => {
+                  setPergunta("Quem é você, Thoth?")
+                  handleEnviarPergunta()
+                }}
+              >
+                <Users className="h-4 w-4 mr-2" />
+                Quem é você, Thoth?
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
@@ -351,37 +354,31 @@ export function AdminAIAssistant() {
           </CardHeader>
           <CardContent>
             <div className="flex items-center justify-center mb-4">
-              <div className="relative h-20 w-20">
-                <Image
-                  src="/thoth-avatar.png"
-                  alt="Thoth"
-                  width={80}
-                  height={80}
-                  className={`${thothAtivo ? "animate-pulse" : ""}`}
-                />
+              <div className={`w-16 h-16 rounded-full overflow-hidden ${thothAtivo ? "animate-pulse" : ""}`}>
+                <img src="/thoth-icon.png" alt="Thoth" className="w-full h-full object-cover" />
               </div>
             </div>
             <ul className="space-y-2 text-sm">
               <li className="flex items-start gap-2">
-                <div className="bg-purple-100 text-purple-800 rounded-full h-5 w-5 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <div className="bg-amber-100 text-amber-800 rounded-full h-5 w-5 flex items-center justify-center flex-shrink-0 mt-0.5">
                   1
                 </div>
                 <span>Análise de desempenho dos guichês e atendentes</span>
               </li>
               <li className="flex items-start gap-2">
-                <div className="bg-purple-100 text-purple-800 rounded-full h-5 w-5 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <div className="bg-amber-100 text-amber-800 rounded-full h-5 w-5 flex items-center justify-center flex-shrink-0 mt-0.5">
                   2
                 </div>
                 <span>Recomendações para otimização do fluxo de trabalho</span>
               </li>
               <li className="flex items-start gap-2">
-                <div className="bg-purple-100 text-purple-800 rounded-full h-5 w-5 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <div className="bg-amber-100 text-amber-800 rounded-full h-5 w-5 flex items-center justify-center flex-shrink-0 mt-0.5">
                   3
                 </div>
                 <span>Pesquisa de soluções na internet e uso de outras IAs</span>
               </li>
               <li className="flex items-start gap-2">
-                <div className="bg-purple-100 text-purple-800 rounded-full h-5 w-5 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <div className="bg-amber-100 text-amber-800 rounded-full h-5 w-5 flex items-center justify-center flex-shrink-0 mt-0.5">
                   4
                 </div>
                 <span>Resolução de problemas técnicos e bugs do sistema</span>
