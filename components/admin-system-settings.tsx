@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -8,20 +8,10 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Save, RefreshCw, CloudUpload, Download } from "lucide-react"
-import { FirebaseConfigForm } from "@/components/firebase-config-form"
-import { isFirebaseConfigured } from "@/lib/firebase"
-import { realizarBackupAutomatico, listarBackups, configurarBackupAutomatico, restaurarBackup } from "@/lib/backup"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle } from "lucide-react"
+import { Save, RefreshCw } from "lucide-react"
 
 export function AdminSystemSettings() {
   const [salvando, setSalvando] = useState(false)
-  const [backupStatus, setBackupStatus] = useState("")
-  const [backups, setBackups] = useState<{ id: string; nome: string; url: string; data: string }[]>([])
-  const [carregandoBackups, setCarregandoBackups] = useState(false)
-  const [restaurandoBackup, setRestaurandoBackup] = useState(false)
-  const [backupSelecionado, setBackupSelecionado] = useState("")
   const [configuracoes, setConfiguracoes] = useState({
     // Configurações gerais
     nomeCartorio: localStorage.getItem("config_nomeCartorio") || "Cartório de Registro Civil",
@@ -43,38 +33,7 @@ export function AdminSystemSettings() {
     // Configurações de notificações
     notificacoesAtivas: localStorage.getItem("config_notificacoesAtivas") !== "false",
     notificacoesDesktop: localStorage.getItem("config_notificacoesDesktop") !== "false",
-
-    // Configurações de backup
-    backupAutomatico: localStorage.getItem("config_backupAutomatico") !== "false",
-    intervaloBackup: localStorage.getItem("config_intervaloBackup") || "60",
   })
-
-  useEffect(() => {
-    // Carregar backups disponíveis se o Firebase estiver configurado
-    const carregarBackups = async () => {
-      if (isFirebaseConfigured()) {
-        setCarregandoBackups(true)
-        try {
-          const listaBackups = await listarBackups()
-          setBackups(listaBackups)
-        } catch (error) {
-          console.error("Erro ao carregar backups:", error)
-        } finally {
-          setCarregandoBackups(false)
-        }
-      }
-    }
-
-    carregarBackups()
-  }, [])
-
-  // Configurar backup automático quando as configurações mudarem
-  useEffect(() => {
-    if (configuracoes.backupAutomatico && isFirebaseConfigured()) {
-      const intervalo = Number.parseInt(configuracoes.intervaloBackup) || 60
-      configurarBackupAutomatico(intervalo)
-    }
-  }, [configuracoes.backupAutomatico, configuracoes.intervaloBackup])
 
   const salvarConfiguracoes = () => {
     setSalvando(true)
@@ -83,12 +42,6 @@ export function AdminSystemSettings() {
     Object.entries(configuracoes).forEach(([chave, valor]) => {
       localStorage.setItem(`config_${chave}`, valor.toString())
     })
-
-    // Configurar backup automático se estiver ativado
-    if (configuracoes.backupAutomatico && isFirebaseConfigured()) {
-      const intervalo = Number.parseInt(configuracoes.intervaloBackup) || 60
-      configurarBackupAutomatico(intervalo)
-    }
 
     // Simular tempo de salvamento
     setTimeout(() => {
@@ -103,66 +56,14 @@ export function AdminSystemSettings() {
     }))
   }
 
-  const handleBackupManual = async () => {
-    setBackupStatus("Realizando backup...")
-    try {
-      const url = await realizarBackupAutomatico()
-      if (url) {
-        setBackupStatus(`Backup realizado com sucesso!`)
-
-        // Atualizar lista de backups
-        const listaBackups = await listarBackups()
-        setBackups(listaBackups)
-      } else {
-        setBackupStatus("Falha ao realizar backup. Verifique a configuração do Firebase.")
-      }
-    } catch (error) {
-      console.error("Erro ao realizar backup:", error)
-      setBackupStatus(`Erro ao realizar backup: ${error.message}`)
-    }
-  }
-
-  const handleRestaurarBackup = async () => {
-    if (!backupSelecionado) {
-      setBackupStatus("Selecione um backup para restaurar")
-      return
-    }
-
-    setRestaurandoBackup(true)
-    setBackupStatus("Restaurando backup...")
-
-    try {
-      const backup = backups.find((b) => b.id === backupSelecionado)
-      if (!backup) {
-        throw new Error("Backup não encontrado")
-      }
-
-      const sucesso = await restaurarBackup(backup.url)
-      if (sucesso) {
-        setBackupStatus("Backup restaurado com sucesso! A página será recarregada.")
-        setTimeout(() => {
-          window.location.reload()
-        }, 2000)
-      } else {
-        setBackupStatus("Falha ao restaurar backup.")
-      }
-    } catch (error) {
-      console.error("Erro ao restaurar backup:", error)
-      setBackupStatus(`Erro ao restaurar backup: ${error.message}`)
-    } finally {
-      setRestaurandoBackup(false)
-    }
-  }
-
   return (
     <div className="space-y-6">
       <Tabs defaultValue="geral" className="space-y-6">
-        <TabsList className="grid grid-cols-5 w-full">
+        <TabsList className="grid grid-cols-4 w-full">
           <TabsTrigger value="geral">Geral</TabsTrigger>
           <TabsTrigger value="senhas">Senhas</TabsTrigger>
           <TabsTrigger value="audio">Áudio</TabsTrigger>
           <TabsTrigger value="notificacoes">Notificações</TabsTrigger>
-          <TabsTrigger value="backup">Backup</TabsTrigger>
         </TabsList>
 
         <TabsContent value="geral">
@@ -362,123 +263,6 @@ export function AdminSystemSettings() {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
-
-        <TabsContent value="backup">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="md:col-span-2">
-              <FirebaseConfigForm />
-            </div>
-
-            {isFirebaseConfigured() && (
-              <>
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <CloudUpload className="h-5 w-5" />
-                      Backup Automático
-                    </CardTitle>
-                    <CardDescription>Configure o backup automático dos dados</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="backupAutomatico">Backup Automático</Label>
-                      <Switch
-                        id="backupAutomatico"
-                        checked={configuracoes.backupAutomatico}
-                        onCheckedChange={(checked) => handleChange("backupAutomatico", checked)}
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="intervaloBackup">Intervalo de Backup (minutos)</Label>
-                      <Input
-                        id="intervaloBackup"
-                        type="number"
-                        min="15"
-                        max="1440"
-                        value={configuracoes.intervaloBackup}
-                        onChange={(e) => handleChange("intervaloBackup", e.target.value)}
-                        disabled={!configuracoes.backupAutomatico}
-                      />
-                      <p className="text-xs text-gray-500">Intervalo entre backups automáticos (mínimo 15 minutos)</p>
-                    </div>
-
-                    <div className="pt-2">
-                      <Button onClick={handleBackupManual} className="w-full flex items-center gap-2">
-                        <CloudUpload className="h-4 w-4" />
-                        Realizar Backup Manual
-                      </Button>
-                      {backupStatus && <p className="text-xs text-center mt-2">{backupStatus}</p>}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Download className="h-5 w-5" />
-                      Restaurar Backup
-                    </CardTitle>
-                    <CardDescription>Restaure dados de um backup anterior</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {carregandoBackups ? (
-                      <div className="text-center py-4">
-                        <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2" />
-                        <p className="text-sm">Carregando backups disponíveis...</p>
-                      </div>
-                    ) : backups.length === 0 ? (
-                      <Alert>
-                        <AlertCircle className="h-4 w-4" />
-                        <AlertTitle>Nenhum backup disponível</AlertTitle>
-                        <AlertDescription>
-                          Realize um backup manual ou aguarde o próximo backup automático.
-                        </AlertDescription>
-                      </Alert>
-                    ) : (
-                      <>
-                        <div className="space-y-2">
-                          <Label htmlFor="backupSelecionado">Selecione um backup</Label>
-                          <Select value={backupSelecionado} onValueChange={setBackupSelecionado}>
-                            <SelectTrigger id="backupSelecionado">
-                              <SelectValue placeholder="Selecione um backup" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {backups.map((backup) => (
-                                <SelectItem key={backup.id} value={backup.id}>
-                                  {backup.nome}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <Button
-                          onClick={handleRestaurarBackup}
-                          variant="outline"
-                          disabled={!backupSelecionado || restaurandoBackup}
-                          className="w-full flex items-center gap-2"
-                        >
-                          {restaurandoBackup ? (
-                            <>
-                              <RefreshCw className="h-4 w-4 animate-spin" />
-                              Restaurando...
-                            </>
-                          ) : (
-                            <>
-                              <Download className="h-4 w-4" />
-                              Restaurar Backup Selecionado
-                            </>
-                          )}
-                        </Button>
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-              </>
-            )}
-          </div>
         </TabsContent>
       </Tabs>
 
