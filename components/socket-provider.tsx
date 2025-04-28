@@ -2,81 +2,83 @@
 
 import type React from "react"
 
-import { useEffect, useState, createContext, useContext } from "react"
-import { realtimeService, ConnectionStatus } from "@/lib/realtime-service"
+import { useEffect, useState } from "react"
+import { initSocketService, socketService, SocketEvent } from "@/lib/socket-service"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle, Wifi, WifiOff, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
-// Criar contexto para o serviço de tempo real
-const RealtimeContext = createContext<{
-  isConnected: boolean
-  connectionStatus: ConnectionStatus
-  reconnect: () => void
-}>({
-  isConnected: false,
-  connectionStatus: ConnectionStatus.DISCONNECTED,
-  reconnect: () => {},
-})
-
-// Hook para usar o contexto de tempo real
-export function useRealtime() {
-  return useContext(RealtimeContext)
-}
-
-// Hook para compatibilidade com código existente
-export function useSocket() {
-  const realtime = useRealtime()
-  return {
-    socket: {
-      on: realtimeService.on.bind(realtimeService),
-      off: realtimeService.off.bind(realtimeService),
-      emit: realtimeService.emit.bind(realtimeService),
-      connected: realtime.isConnected,
-    },
-    isConnected: realtime.isConnected,
-  }
-}
-
 export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [isConnected, setIsConnected] = useState(false)
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(ConnectionStatus.DISCONNECTED)
   const [showReconnecting, setShowReconnecting] = useState(false)
   const [connectionError, setConnectionError] = useState<string | null>(null)
+  const [transport, setTransport] = useState<string>("none")
+  const [socketId, setSocketId] = useState<string | null>(null)
 
   useEffect(() => {
+    // Inicializar o serviço de socket
+    initSocketService()
+
     // Configurar listeners para status de conexão
-    const handleStatusChange = (status: ConnectionStatus) => {
-      setConnectionStatus(status)
-      setIsConnected(status === ConnectionStatus.CONNECTED)
-      setShowReconnecting(status === ConnectionStatus.CONNECTING || status === ConnectionStatus.RECONNECTING)
-      setConnectionError(status === ConnectionStatus.ERROR ? "Erro de conexão" : null)
+    const handleConnect = () => {
+      setIsConnected(true)
+      setShowReconnecting(false)
+      setConnectionError(null)
+      setSocketId(socketService.getSocketId())
+
+      // Atualizar informações de transporte a cada segundo
+      const intervalId = setInterval(() => {
+        setTransport(socketService.getTransport())
+      }, 1000)
+
+      return () => clearInterval(intervalId)
     }
 
-    realtimeService.onStatusChange(handleStatusChange)
+    const handleDisconnect = () => {
+      setIsConnected(false)
+      setShowReconnecting(true)
+      setTransport("none")
+    }
 
-    // Iniciar conexão
-    realtimeService.connect()
+    const handleError = (error: any) => {
+      setConnectionError(error?.message || "Erro desconhecido")
+    }
+
+    socketService.on(SocketEvent.CONNECT, handleConnect)
+    socketService.on(SocketEvent.DISCONNECT, handleDisconnect)
+    socketService.on(SocketEvent.ERROR, handleError)
+
+    // Verificar status inicial
+    setIsConnected(socketService.isConnected())
+    if (socketService.isConnected()) {
+      setSocketId(socketService.getSocketId())
+      setTransport(socketService.getTransport())
+    }
+
+    // Atualizar informações de transporte a cada segundo se conectado
+    const intervalId = setInterval(() => {
+      if (socketService.isConnected()) {
+        setTransport(socketService.getTransport())
+      }
+    }, 1000)
 
     return () => {
-      realtimeService.offStatusChange(handleStatusChange)
+      socketService.off(SocketEvent.CONNECT, handleConnect)
+      socketService.off(SocketEvent.DISCONNECT, handleDisconnect)
+      socketService.off(SocketEvent.ERROR, handleError)
+      clearInterval(intervalId)
     }
   }, [])
 
   const handleReconnect = () => {
-    realtimeService.reconnect()
+    socketService.disconnect()
+    socketService.connect()
     setShowReconnecting(true)
     setConnectionError(null)
   }
 
   return (
-    <RealtimeContext.Provider
-      value={{
-        isConnected,
-        connectionStatus,
-        reconnect: handleReconnect,
-      }}
-    >
+    <>
       {children}
 
       {/* Alerta de reconexão */}
@@ -109,7 +111,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
           {isConnected ? (
             <>
               <Wifi className="h-3 w-3" />
-              <span>Conectado</span>
+              <span>Conectado ({transport})</span>
             </>
           ) : (
             <>
@@ -119,6 +121,6 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
           )}
         </div>
       </div>
-    </RealtimeContext.Provider>
+    </>
   )
 }

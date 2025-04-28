@@ -1,30 +1,5 @@
 import { realtimeService, RealtimeEvent } from "./realtime-service"
 
-// Obter todos os guichês
-export const obterGuiches = async (): Promise<{ id: string; nome: string }[]> => {
-  if (typeof window === "undefined") return []
-
-  // Lista padrão de guichês
-  const guichesPadrao = [
-    { id: "1", nome: "Guichê 1" },
-    { id: "2", nome: "Guichê 2" },
-    { id: "3", nome: "Guichê 3" },
-    { id: "4", nome: "Guichê 4" },
-  ]
-
-  // Verificar se há configuração personalizada
-  const guichesConfig = localStorage.getItem("guichesConfig")
-  if (guichesConfig) {
-    try {
-      return JSON.parse(guichesConfig)
-    } catch (error) {
-      console.error("Erro ao carregar configuração de guichês:", error)
-    }
-  }
-
-  return guichesPadrao
-}
-
 // Obter status dos guichês
 export const obterStatusGuiches = async (): Promise<Record<string, string>> => {
   if (typeof window === "undefined") return {}
@@ -44,6 +19,19 @@ export const obterStatusGuiches = async (): Promise<Record<string, string>> => {
 
   localStorage.setItem("statusGuiches", JSON.stringify(statusPadrao))
   return statusPadrao
+}
+
+// Obter lista de guichês
+export const obterGuiches = async (): Promise<{ id: string; nome: string }[]> => {
+  // Lista padrão de guichês
+  const guiches = [
+    { id: "1", nome: "Guichê 1" },
+    { id: "2", nome: "Guichê 2" },
+    { id: "3", nome: "Guichê 3" },
+    { id: "4", nome: "Guichê 4" },
+  ]
+
+  return guiches
 }
 
 // Atualizar status de um guichê

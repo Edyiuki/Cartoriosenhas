@@ -31,11 +31,8 @@ export async function processarPergunta(pergunta: string, contexto: any = {}): P
       throw new Error(data.error)
     }
 
-    // Garantir que texto seja uma string
-    const texto = typeof data.texto === "string" ? data.texto : JSON.stringify(data.texto)
-
     return {
-      texto: texto,
+      texto: data.texto,
       fonte: data.fonte,
       confianca: data.confianca || 0.95,
     }

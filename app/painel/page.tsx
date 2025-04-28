@@ -4,14 +4,13 @@ import { useState, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { obterSenhaAtual, type Senha } from "@/lib/tickets"
 import { obterGuiches } from "@/lib/guiches"
-import { useRealtime } from "@/components/socket-provider"
 import { realtimeService, RealtimeEvent } from "@/lib/realtime-service"
 
 export default function PainelPage() {
   const [senhaAtual, setSenhaAtual] = useState<Senha | null>(null)
   const [ultimasSenhas, setUltimasSenhas] = useState<Senha[]>([])
   const [guiches, setGuiches] = useState<{ id: string; nome: string }[]>([])
-  const { isConnected } = useRealtime()
+  const [isConnected, setIsConnected] = useState(false)
 
   useEffect(() => {
     const carregarDados = async () => {
@@ -20,6 +19,7 @@ export default function PainelPage() {
         if (senha) {
           setSenhaAtual(senha)
           setUltimasSenhas((prev) => {
+            // Adicionar a senha atual ao início do array e manter apenas as últimas   => {
             // Adicionar a senha atual ao início do array e manter apenas as últimas 3
             const novasSenhas = [senha, ...prev.filter((s) => s.id !== senha.id)]
             return novasSenhas.slice(0, 3)
@@ -34,9 +34,8 @@ export default function PainelPage() {
     }
 
     carregarDados()
-  }, [])
 
-  useEffect(() => {
+    // Configurar listeners para eventos de tempo real
     const handleNovaSenhaChamada = (senha: Senha) => {
       setSenhaAtual(senha)
       setUltimasSenhas((prev) => {
@@ -46,17 +45,18 @@ export default function PainelPage() {
       })
     }
 
-    const handleGuichesAtualizados = (novosGuiches: { id: string; nome: string }[]) => {
-      setGuiches(novosGuiches)
-    }
-
-    // Usar o serviço de tempo real diretamente
+    // Escutar eventos de tempo real
     realtimeService.on(RealtimeEvent.TICKET_CALLED, handleNovaSenhaChamada)
-    realtimeService.on(RealtimeEvent.GUICHES_UPDATED, handleGuichesAtualizados)
+    realtimeService.on(RealtimeEvent.CONNECTION_STATUS_CHANGED, (status) => {
+      setIsConnected(status.connected)
+    })
+
+    // Verificar status inicial de conexão
+    setIsConnected(realtimeService.isConnected())
 
     return () => {
       realtimeService.off(RealtimeEvent.TICKET_CALLED, handleNovaSenhaChamada)
-      realtimeService.off(RealtimeEvent.GUICHES_UPDATED, handleGuichesAtualizados)
+      realtimeService.off(RealtimeEvent.CONNECTION_STATUS_CHANGED)
     }
   }, [])
 
@@ -121,6 +121,12 @@ export default function PainelPage() {
 
       <footer className="text-center py-4 border-t border-gray-800">
         <p className="text-gray-500">Sistema de Gerenciamento de Senhas</p>
+        <div
+          className={`inline-flex items-center gap-1 px-2 py-1 mt-2 rounded text-xs ${isConnected ? "bg-green-900 text-green-100" : "bg-red-900 text-red-100"}`}
+        >
+          <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-green-400" : "bg-red-400"}`}></span>
+          <span>{isConnected ? "Conectado" : "Desconectado"}</span>
+        </div>
       </footer>
     </div>
   )

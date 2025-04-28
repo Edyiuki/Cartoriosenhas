@@ -4,19 +4,6 @@ import { ptBR } from "date-fns/locale"
 import { realtimeService, RealtimeEvent } from "./realtime-service"
 
 // Tipos
-export interface Senha {
-  id: string
-  numero: string
-  codigo: string
-  tipo: string
-  subtipo: string
-  horaEmissao: number
-  horaChamada?: number
-  guiche?: string
-  status: "aguardando" | "chamado" | "finalizado"
-  direcionadoPara?: string
-}
-
 export interface Ticket {
   id: string
   codigo: string
@@ -27,6 +14,14 @@ export interface Ticket {
   guiche?: string
   status: "aguardando" | "chamado" | "finalizado"
   direcionadoPara?: string
+}
+
+// Tipos para compatibilidade com o painel
+export interface Senha {
+  id: string
+  numero: string
+  tipo: string
+  guiche?: string
 }
 
 // Prefixos para os tipos de senhas
@@ -105,26 +100,6 @@ const realizarBackupAutomatico = () => {
     // Emitir evento de backup
     realtimeService.emit(RealtimeEvent.SYSTEM_BACKUP, { tipo: "auto", timestamp: agora })
   }
-}
-
-// Obter senha atual (última senha chamada)
-export const obterSenhaAtual = async (): Promise<Senha | null> => {
-  const tickets = obterTickets()
-
-  // Encontrar a última senha chamada
-  const senhasChamadas = tickets
-    .filter((t) => t.status === "chamado")
-    .sort((a, b) => (b.horaChamada || 0) - (a.horaChamada || 0))
-
-  if (senhasChamadas.length === 0) return null
-
-  // Converter para o formato Senha
-  const senha: Senha = {
-    ...senhasChamadas[0],
-    numero: senhasChamadas[0].codigo,
-  }
-
-  return senha
 }
 
 // Gerar uma nova senha
@@ -257,6 +232,27 @@ export const obterProximasSenhas = async (status = "aguardando"): Promise<any[]>
 // Obter todas as senhas
 export const obterTodasSenhas = async (): Promise<Ticket[]> => {
   return obterTickets()
+}
+
+// Obter senha atual (para o painel)
+export const obterSenhaAtual = async (): Promise<Senha | null> => {
+  const tickets = obterTickets()
+
+  // Encontrar a senha mais recentemente chamada
+  const senhasChamadas = tickets
+    .filter((t) => t.status === "chamado")
+    .sort((a, b) => (b.horaChamada || 0) - (a.horaChamada || 0))
+
+  if (senhasChamadas.length === 0) return null
+
+  const senhaAtual = senhasChamadas[0]
+
+  return {
+    id: senhaAtual.id,
+    numero: senhaAtual.codigo,
+    tipo: senhaAtual.tipo,
+    guiche: senhaAtual.guiche,
+  }
 }
 
 // Escutar mudanças nas senhas

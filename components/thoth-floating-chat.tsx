@@ -17,7 +17,8 @@ type Mensagem = {
   timestamp: Date
 }
 
-export function ThothFloatingChat({ usuario, aberto, onToggle, estatisticas }: any) {
+export function ThothFloatingChat() {
+  const [aberto, setAberto] = useState(false)
   const [minimizado, setMinimizado] = useState(false)
   const [pergunta, setPergunta] = useState("")
   const [historico, setHistorico] = useState<Mensagem[]>([])
@@ -83,10 +84,6 @@ export function ThothFloatingChat({ usuario, aberto, onToggle, estatisticas }: a
         body: JSON.stringify({
           pergunta: pergunta.trim(),
           historico: historicoAPI,
-          contexto: {
-            usuario: usuario?.nome,
-            estatisticas: estatisticas || {},
-          },
         }),
       })
 
@@ -98,10 +95,7 @@ export function ThothFloatingChat({ usuario, aberto, onToggle, estatisticas }: a
 
       const novaResposta: Mensagem = {
         tipo: "assistente",
-        conteudo:
-          typeof data.resposta === "string"
-            ? data.resposta
-            : data.resposta?.texto || "Não foi possível processar a resposta",
+        conteudo: data.resposta,
         timestamp: new Date(),
       }
 
@@ -129,11 +123,8 @@ export function ThothFloatingChat({ usuario, aberto, onToggle, estatisticas }: a
   }
 
   const toggleChat = () => {
-    if (onToggle) {
-      onToggle()
-    } else {
-      setMinimizado(false)
-    }
+    setAberto(!aberto)
+    setMinimizado(false)
 
     // Focar no input quando abrir o chat
     if (!aberto) {
@@ -255,5 +246,4 @@ export function ThothFloatingChat({ usuario, aberto, onToggle, estatisticas }: a
   )
 }
 
-// Exportação padrão para compatibilidade
 export default ThothFloatingChat
