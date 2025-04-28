@@ -1,5 +1,4 @@
-// Implementação usando localStorage para persistência de dados
-// Em um ambiente de produção, isso seria substituído por um sistema de chat em tempo real
+import { realtimeService, RealtimeEvent } from "./realtime-service"
 
 // Tipos
 interface Mensagem {
@@ -39,9 +38,8 @@ export const enviarMensagem = async (mensagem: Mensagem): Promise<boolean> => {
 
   salvarMensagensNoStorage(mensagens)
 
-  // Notificar listeners
-  const evento = new CustomEvent("novaMensagem", { detail: mensagem })
-  window.dispatchEvent(evento)
+  // Emitir evento via serviço de tempo real
+  realtimeService.emit(RealtimeEvent.CHAT_MESSAGE, mensagem)
 
   return true
 }
@@ -53,6 +51,10 @@ export const obterMensagens = async (): Promise<Mensagem[]> => {
 
 // Escutar novas mensagens
 export const escutarMensagens = (callback: (mensagem: Mensagem) => void): (() => void) => {
+  // Adicionar listener para eventos de tempo real
+  realtimeService.on(RealtimeEvent.CHAT_MESSAGE, callback)
+
+  // Também escutar eventos de localStorage para compatibilidade
   const handler = (event: Event) => {
     const customEvent = event as CustomEvent
     callback(customEvent.detail)
@@ -63,8 +65,11 @@ export const escutarMensagens = (callback: (mensagem: Mensagem) => void): (() =>
 
     return () => {
       window.removeEventListener("novaMensagem", handler)
+      realtimeService.off(RealtimeEvent.CHAT_MESSAGE, callback)
     }
   }
 
-  return () => {}
+  return () => {
+    realtimeService.off(RealtimeEvent.CHAT_MESSAGE, callback)
+  }
 }

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import { LogOut, Users, BarChart3, Download, Upload, RefreshCw, Save, Send } from "lucide-react"
+import { LogOut, Users, BarChart3, Download, Upload, RefreshCw, Save } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { obterUsuarioAtual, logout, obterTodosUsuarios } from "@/lib/auth"
 import { obterTodasSenhas, exportarDadosSenhas, importarDadosSenhas } from "@/lib/tickets"
@@ -18,6 +18,7 @@ import { AdminAIAssistant } from "@/components/admin-ai-assistant"
 import { AdminUserManagement } from "@/components/admin-user-management"
 import { AdminSystemSettings } from "@/components/admin-system-settings"
 import { AdminDashboardCharts } from "@/components/admin-dashboard-charts"
+import { ThothFloatingChat } from "@/components/thoth-floating-chat"
 import Link from "next/link"
 
 export default function AdminDashboardPage() {
@@ -29,6 +30,8 @@ export default function AdminDashboardPage() {
     senhasChamadas: 0,
     senhasFinalizadas: 0,
     totalUsuarios: 0,
+    tempoMedioAtendimento: "15 min",
+    produtividadeMedia: "85%",
   })
   const [carregando, setCarregando] = useState(true)
   const [importFile, setImportFile] = useState<File | null>(null)
@@ -68,6 +71,8 @@ export default function AdminDashboardPage() {
         senhasChamadas: senhas.filter((s) => s.status === "chamado").length,
         senhasFinalizadas: senhas.filter((s) => s.status === "finalizado").length,
         totalUsuarios: usuarios.length,
+        tempoMedioAtendimento: "15 min",
+        produtividadeMedia: "85%",
       })
     } catch (error) {
       console.error("Erro ao carregar dados:", error)
@@ -141,56 +146,14 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
-      {/* Thoth Chat Flutuante */}
-      {showThothChat && (
-        <div className="fixed left-4 bottom-4 w-80 h-96 bg-white rounded-lg shadow-lg z-50 flex flex-col">
-          <div className="bg-gradient-to-r from-teal-600 to-amber-600 text-white p-3 rounded-t-lg flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-full overflow-hidden bg-white p-0.5">
-                <img src="/thoth-icon.png" alt="Thoth" className="w-full h-full object-cover" />
-              </div>
-              <span className="font-medium">Thoth - Assistente IA</span>
-            </div>
-            <button onClick={toggleThothChat} className="text-white hover:text-gray-200">
-              ✕
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-3 bg-gray-50">
-            <div className="flex justify-start mb-3">
-              <div className="max-w-[80%] rounded-lg p-2 bg-white border border-gray-200">
-                <div className="flex items-center gap-1 mb-1">
-                  <div className="w-5 h-5 rounded-full overflow-hidden">
-                    <img src="/thoth-icon.png" alt="Thoth" className="w-full h-full object-cover" />
-                  </div>
-                  <span className="text-xs font-medium text-amber-600">Thoth</span>
-                </div>
-                <p className="text-xs">
-                  Olá! Como posso ajudar você hoje? Estou aqui para responder suas perguntas sobre o sistema.
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="p-2 border-t">
-            <div className="flex gap-2">
-              <Input placeholder="Digite sua mensagem..." className="text-sm" />
-              <Button size="sm" className="px-2">
-                <Send className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Botão flutuante para abrir o chat com Thoth */}
-      {!showThothChat && (
-        <button
-          onClick={toggleThothChat}
-          className="fixed left-4 bottom-4 bg-gradient-to-r from-teal-600 to-amber-600 text-white p-2 rounded-full shadow-lg z-50 hover:opacity-90 transition-opacity"
-        >
-          <div className="w-8 h-8 rounded-full overflow-hidden bg-white p-0.5 animate-bounce">
-            <img src="/thoth-icon.png" alt="Thoth" className="w-full h-full object-cover" />
-          </div>
-        </button>
+      {/* Chat flutuante do Thoth */}
+      {usuario && (
+        <ThothFloatingChat
+          usuario={usuario}
+          aberto={showThothChat}
+          onToggle={toggleThothChat}
+          estatisticas={estatisticas}
+        />
       )}
 
       <div className="container mx-auto px-4 py-6">

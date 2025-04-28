@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Brain, Send, BarChart3, Users, Clock, ArrowRight } from "lucide-react"
 import { obterEstatisticasAtendimento, obterEstatisticasGuiche } from "@/lib/estatisticas"
-import { analisarDadosComIA } from "@/lib/ia-analise"
+import { processarPergunta } from "@/lib/ia-service"
 
 export function AdminAIAssistant() {
   const [pergunta, setPergunta] = useState("")
@@ -73,107 +73,19 @@ export function AdminAIAssistant() {
     setCarregando(true)
 
     try {
-      // Em um sistema real, isso seria uma chamada para um serviço de IA
-      // Aqui estamos simulando respostas baseadas em palavras-chave
-      let resposta = ""
+      // Usar o serviço de IA para processar a pergunta
+      const resposta = await processarPergunta(pergunta, {
+        totalAtendimentos: estatisticas.gerais?.totalAtendimentos,
+        tempoMedio: estatisticas.gerais?.tempoMedioAtendimento,
+        produtividade: estatisticas.gerais?.produtividadeMedia,
+        estatisticas: estatisticas,
+      })
 
-      const perguntaLower = pergunta.toLowerCase()
-
-      if (
-        perguntaLower.includes("estatística") ||
-        perguntaLower.includes("desempenho") ||
-        perguntaLower.includes("produtividade")
-      ) {
-        // Gerar resposta baseada nas estatísticas
-        const insights = await analisarDadosComIA("semanal", "todos", "todos", estatisticas)
-
-        resposta =
-          `Com base nas estatísticas atuais, posso informar que:\n\n` +
-          `- Total de atendimentos: ${estatisticas.gerais?.totalAtendimentos || 0}\n` +
-          `- Tempo médio de atendimento: ${estatisticas.gerais?.tempoMedioAtendimento || "0 min"}\n` +
-          `- Produtividade média: ${estatisticas.gerais?.produtividadeMedia || "0%"}\n\n` +
-          `${insights.resumoGeral}\n\n` +
-          `Recomendação principal: ${insights.recomendacoes?.[0] || "Não há recomendações disponíveis no momento."}`
-      } else if (perguntaLower.includes("guichê") || perguntaLower.includes("guiche")) {
-        // Resposta sobre guichês
-        const guicheNumero = perguntaLower.match(/guich[êe]\s*(\d+)/i)?.[1]
-
-        if (guicheNumero) {
-          const dadosGuiche = estatisticas.guiche?.produtividadePorGuiche?.find((g: any) => g.guiche === guicheNumero)
-
-          if (dadosGuiche) {
-            resposta =
-              `Informações sobre o Guichê ${guicheNumero}:\n\n` +
-              `- Produtividade: ${dadosGuiche.produtividade}%\n` +
-              `- Total de atendimentos: ${dadosGuiche.atendimentos}\n` +
-              `- Tempo médio de atendimento: ${estatisticas.guiche?.tempoMedioPorGuiche?.find((g: any) => g.guiche === guicheNumero)?.tempoMedio || 0} minutos\n\n` +
-              `Este guichê está ${dadosGuiche.produtividade > 80 ? "com bom desempenho" : "precisando de atenção para melhorar a produtividade"}.`
-          } else {
-            resposta = `Não encontrei informações específicas sobre o Guichê ${guicheNumero}. Verifique se o número está correto ou tente visualizar as estatísticas gerais.`
-          }
-        } else {
-          resposta =
-            `Informações gerais sobre os guichês:\n\n` +
-            `- Guichê mais produtivo: Guichê ${estatisticas.guiche?.produtividadePorGuiche?.[0]?.guiche || "N/A"} (${estatisticas.guiche?.produtividadePorGuiche?.[0]?.produtividade || 0}%)\n` +
-            `- Guichê com mais atendimentos: Guichê ${estatisticas.guiche?.atendimentosPorGuiche?.[0]?.guiche || "N/A"} (${estatisticas.guiche?.atendimentosPorGuiche?.[0]?.total || 0} atendimentos)\n` +
-            `- Guichê mais rápido: Guichê ${estatisticas.guiche?.tempoMedioPorGuiche?.sort((a: any, b: any) => a.tempoMedio - b.tempoMedio)[0]?.guiche || "N/A"}`
-        }
-      } else if (
-        perguntaLower.includes("otimiz") ||
-        perguntaLower.includes("melhor") ||
-        perguntaLower.includes("sugest")
-      ) {
-        // Sugestões de otimização
-        const insights = await analisarDadosComIA("semanal", "todos", "todos", estatisticas)
-
-        resposta =
-          `Aqui estão algumas sugestões para otimizar o atendimento:\n\n` +
-            insights.recomendacoes?.map((rec: string, i: number) => `${i + 1}. ${rec}`).join("\n") ||
-          "Não há recomendações disponíveis no momento."
-      } else if (
-        perguntaLower.includes("backup") ||
-        perguntaLower.includes("dados") ||
-        perguntaLower.includes("export")
-      ) {
-        // Informações sobre backup
-        resposta =
-          `Para gerenciar os dados do sistema:\n\n` +
-          `1. Acesse a aba "Estatísticas" no painel do administrador\n` +
-          `2. Use o botão "Exportar Dados" para fazer backup completo\n` +
-          `3. Use o botão "Importar Dados" para restaurar um backup\n\n` +
-          `Recomendo fazer backups regulares para evitar perda de dados. Os dados são armazenados localmente no navegador usando localStorage.`
-      } else if (perguntaLower.includes("senha") || perguntaLower.includes("atendimento")) {
-        // Informações sobre senhas e atendimentos
-        resposta =
-          `Informações sobre senhas e atendimentos:\n\n` +
-          `- Total de senhas emitidas: ${estatisticas.gerais?.totalAtendimentos || 0}\n` +
-          `- Tipo de atendimento mais frequente: ${estatisticas.gerais?.atendimentosPorTipo?.[0]?.tipo || "N/A"} (${estatisticas.gerais?.atendimentosPorTipo?.[0]?.quantidade || 0} atendimentos)\n` +
-          `- Tempo médio de espera: ${estatisticas.gerais?.tempoMedioAtendimento || "0 min"}\n\n` +
-          `Para melhorar o fluxo de atendimento, considere redistribuir os tipos de atendimento entre os guichês com base na demanda.`
-      } else if (perguntaLower.includes("quem é você") || perguntaLower.includes("thoth")) {
-        // Informações sobre Thoth
-        resposta = perguntaLower.includes("thoth")
-          ? `Eu sou Thoth, o assistente de IA deste sistema de gerenciamento de senhas para cartório. Fui nomeado em homenagem ao deus egípcio Thoth, que era o deus da sabedoria, escrita, magia, medição do tempo e protetor dos escribas.\n\n` +
-            `Estou aqui para ajudar com:\n`
-          : ""`- Análise de dados e estatísticas do sistema\n` +
-            `- Sugestões para otimização de processos\n` +
-            `- Resolução de problemas técnicos\n` +
-            `- Responder dúvidas sobre o funcionamento do sistema\n\n` +
-            `Posso pesquisar soluções na internet e utilizar outras ferramentas de IA para melhor atendê-lo. Como posso ajudar hoje?`
-      } else {
-        // Resposta genérica
-        resposta =
-          `Obrigado pela sua pergunta. Como Thoth, o assistente IA do sistema, posso ajudar com:\n\n` +
-          `- Análise de desempenho dos guichês\n` +
-          `- Estatísticas de atendimento\n` +
-          `- Sugestões para otimização do fluxo de trabalho\n` +
-          `- Informações sobre o sistema\n` +
-          `- Resolução de problemas técnicos\n\n` +
-          `Por favor, seja mais específico sobre qual informação você precisa, e ficarei feliz em ajudar.`
-      }
+      // Formatar resposta com fonte se disponível
+      const textoResposta = resposta.fonte ? `${resposta.texto}\n\n_Fonte: ${resposta.fonte}_` : resposta.texto
 
       // Adicionar resposta ao histórico
-      setHistorico((prev) => [...prev, { tipo: "resposta", texto: resposta }])
+      setHistorico((prev) => [...prev, { tipo: "resposta", texto: textoResposta }])
     } catch (error) {
       console.error("Erro ao processar pergunta:", error)
       setHistorico((prev) => [

@@ -5,29 +5,26 @@ import type React from "react"
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Send, User, Megaphone } from "lucide-react"
-import { enviarMensagem, obterMensagens, escutarMensagens } from "@/lib/chat"
-import { formatarHora } from "@/lib/utils"
-import { GuicheStatusPanel } from "@/components/guiche-status-panel"
+import { Send } from "lucide-react"
+import { enviarMensagem, obterMensagens } from "@/lib/chat"
+import { realtimeService, RealtimeEvent } from "@/lib/realtime-service"
 
 interface ChatPanelProps {
   usuario: {
     id: string
     nome: string
-    guiche?: string
-    tipo?: string
+    tipo: string
   }
 }
 
 export function ChatPanel({ usuario }: ChatPanelProps) {
   const [mensagens, setMensagens] = useState<any[]>([])
   const [novaMensagem, setNovaMensagem] = useState("")
+  const [carregando, setCarregando] = useState(false)
   const chatContainerRef = useRef<HTMLDivElement>(null)
-  const [anuncioGlobal, setAnuncioGlobal] = useState("")
-  const isRecepcao = usuario.tipo === "recepcao"
 
   useEffect(() => {
-    const carregarMensagens = async () => {
+    const carregarDados = async () => {
       const msgs = await obterMensagens()
       setMensagens(msgs)
 
@@ -39,10 +36,10 @@ export function ChatPanel({ usuario }: ChatPanelProps) {
       }, 100)
     }
 
-    carregarMensagens()
+    carregarDados()
 
     // Configurar listener para novas mensagens
-    const unsubscribe = escutarMensagens((novaMensagem) => {
+    const handleNovaMensagem = (novaMensagem: any) => {
       setMensagens((prev) => [...prev, novaMensagem])
 
       // Rolar para o final
@@ -51,85 +48,49 @@ export function ChatPanel({ usuario }: ChatPanelProps) {
           chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
         }
       }, 100)
-    })
+    }
+
+    // Usar o serviço de tempo real em vez do Socket.io
+    realtimeService.on(RealtimeEvent.CHAT_MESSAGE, handleNovaMensagem)
 
     return () => {
-      unsubscribe()
+      realtimeService.off(RealtimeEvent.CHAT_MESSAGE, handleNovaMensagem)
     }
   }, [])
 
   const handleEnviarMensagem = async () => {
     if (!novaMensagem.trim()) return
 
-    await enviarMensagem({
-      usuarioId: usuario.id,
-      usuarioNome: usuario.nome,
-      guiche: usuario.guiche || "Recepção",
-      texto: novaMensagem,
-      timestamp: Date.now(),
-      tipo: usuario.tipo || "atendente",
-    })
+    setCarregando(true)
 
-    setNovaMensagem("")
-  }
+    try {
+      await enviarMensagem({
+        usuarioId: usuario.id,
+        usuarioNome: usuario.nome,
+        guiche: usuario.tipo === "atendente" ? usuario.guiche : "Admin",
+        texto: novaMensagem,
+        timestamp: Date.now(),
+        tipo: usuario.tipo,
+      })
 
-  const handleEnviarAnuncioGlobal = async () => {
-    if (!anuncioGlobal.trim()) return
-
-    await enviarMensagem({
-      usuarioId: usuario.id,
-      usuarioNome: usuario.nome,
-      guiche: "Recepção",
-      texto: anuncioGlobal,
-      timestamp: Date.now(),
-      tipo: "anuncio",
-    })
-
-    setAnuncioGlobal("")
+      setNovaMensagem("")
+    } catch (error) {
+      console.error("Erro ao enviar mensagem:", error)
+    } finally {
+      setCarregando(false)
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
       handleEnviarMensagem()
     }
   }
 
   return (
     <div className="flex flex-col h-full">
-      {isRecepcao && (
-        <div className="mb-4 p-3 bg-blue-50 rounded-md border border-blue-100">
-          <h3 className="text-sm font-medium mb-2 flex items-center gap-1">
-            <Megaphone className="h-4 w-4" />
-            Anúncio Global
-          </h3>
-          <div className="flex gap-2">
-            <Input
-              placeholder="Enviar anúncio para todos..."
-              value={anuncioGlobal}
-              onChange={(e) => setAnuncioGlobal(e.target.value)}
-            />
-            <Button onClick={handleEnviarAnuncioGlobal}>
-              <Send className="h-4 w-4" />
-            </Button>
-          </div>
-          <p className="text-xs text-gray-500 mt-1">
-            Os anúncios globais são destacados para todos os atendentes e recepcionistas.
-          </p>
-        </div>
-      )}
-
-      {!isRecepcao && (
-        <div className="mb-4">
-          <h3 className="text-sm font-medium mb-2">Status dos Guichês</h3>
-          <GuicheStatusPanel />
-        </div>
-      )}
-
-      <div
-        ref={chatContainerRef}
-        className="flex-1 overflow-y-auto mb-4 space-y-3 border rounded-md p-3 bg-gray-50"
-        style={{ maxHeight: "300px" }}
-      >
+      <div ref={chatContainerRef} className="flex-1 overflow-y-auto border rounded-md p-4 bg-gray-50 space-y-3">
         {mensagens.length > 0 ? (
           mensagens.map((msg, index) => (
             <div key={index} className={`flex ${msg.usuarioId === usuario.id ? "justify-end" : "justify-start"}`}>
@@ -144,16 +105,8 @@ export function ChatPanel({ usuario }: ChatPanelProps) {
                         : "bg-white border text-gray-800"
                 }`}
               >
-                {msg.tipo === "anuncio" && (
-                  <div className="flex items-center gap-1 mb-1 text-xs font-medium text-blue-600">
-                    <Megaphone className="h-3 w-3" />
-                    <span>ANÚNCIO GLOBAL</span>
-                  </div>
-                )}
-
                 {msg.usuarioId !== "sistema" && msg.usuarioId !== usuario.id && (
                   <div className="flex items-center gap-1 mb-1 text-xs text-gray-500">
-                    <User className="h-3 w-3" />
                     <span>
                       {msg.usuarioNome} ({msg.guiche})
                     </span>
@@ -169,17 +122,26 @@ export function ChatPanel({ usuario }: ChatPanelProps) {
         )}
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 mt-4">
         <Input
           placeholder="Digite sua mensagem..."
           value={novaMensagem}
           onChange={(e) => setNovaMensagem(e.target.value)}
           onKeyDown={handleKeyDown}
+          disabled={carregando}
         />
-        <Button onClick={handleEnviarMensagem}>
+        <Button onClick={handleEnviarMensagem} disabled={carregando}>
           <Send className="h-4 w-4" />
         </Button>
       </div>
     </div>
   )
+}
+
+// Função auxiliar para formatar hora
+function formatarHora(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  })
 }

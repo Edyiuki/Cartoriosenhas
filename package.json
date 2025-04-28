@@ -59,6 +59,8 @@
     "vaul": "^0.9.6",
     "zod": "^3.24.1",
     "chart.js": "latest",
+    "socket.io": "latest",
+    "socket.io-client": "latest",
     "uuid": "latest"
   },
   "devDependencies": {

@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next/types"
 import { Inter } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
+import { RealtimeProvider } from "@/components/realtime-provider"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -29,7 +30,7 @@ export default function RootLayout({
     <html lang="pt-BR" suppressHydrationWarning>
       <body className={inter.className}>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-          {children}
+          <RealtimeProvider>{children}</RealtimeProvider>
         </ThemeProvider>
       </body>
     </html>

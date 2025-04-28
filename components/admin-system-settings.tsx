@@ -1,286 +1,327 @@
 "use client"
 
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Save, RefreshCw } from "lucide-react"
+import { Slider } from "@/components/ui/slider"
+import { BackupControlPanel } from "./backup-control-panel"
+import { toast } from "@/components/ui/use-toast"
 
 export function AdminSystemSettings() {
-  const [salvando, setSalvando] = useState(false)
-  const [configuracoes, setConfiguracoes] = useState({
-    // Configurações gerais
-    nomeCartorio: localStorage.getItem("config_nomeCartorio") || "Cartório de Registro Civil",
-    tempoAtualizacao: localStorage.getItem("config_tempoAtualizacao") || "30",
-    temaEscuro: localStorage.getItem("config_temaEscuro") === "true",
-
-    // Configurações de senhas
-    prefixoGeral: localStorage.getItem("config_prefixoGeral") || "G",
-    prefixoCasamento: localStorage.getItem("config_prefixoCasamento") || "C",
-    prefixoAlteracao: localStorage.getItem("config_prefixoAlteracao") || "A",
-    prefixoTraslado: localStorage.getItem("config_prefixoTraslado") || "T",
-    prefixoObito: localStorage.getItem("config_prefixoObito") || "O",
-
-    // Configurações de áudio
-    audioAtivo: localStorage.getItem("config_audioAtivo") !== "false",
-    repeticoesAudio: localStorage.getItem("config_repeticoesAudio") || "2",
-    velocidadeAudio: localStorage.getItem("config_velocidadeAudio") || "0.9",
-
-    // Configurações de notificações
-    notificacoesAtivas: localStorage.getItem("config_notificacoesAtivas") !== "false",
-    notificacoesDesktop: localStorage.getItem("config_notificacoesDesktop") !== "false",
+  const [settings, setSettings] = useState({
+    nomeCartorio: "Cartório de Registro Civil",
+    tempoMaximoAtendimento: 15,
+    tempoAlertaAtendimento: 10,
+    temaEscuro: false,
+    volumeNotificacoes: 80,
+    tiposSenha: ["Normal", "Prioritário", "Rápido"],
+    idioma: "pt-BR",
+    mostrarChatPublico: true,
+    permitirChatAnonimo: false,
+    mostrarEstatisticasPublicas: false,
+    permitirReagendamento: true,
+    horaInicioExpediente: "08:00",
+    horaFimExpediente: "17:00",
+    diasFuncionamento: ["Segunda", "Terça", "Quarta", "Quinta", "Sexta"],
+    intervaloBackupAutomatico: 30,
   })
 
-  const salvarConfiguracoes = () => {
-    setSalvando(true)
+  useEffect(() => {
+    // Carregar configurações do localStorage
+    const savedSettings = localStorage.getItem("configuracoes")
+    if (savedSettings) {
+      setSettings(JSON.parse(savedSettings))
+    }
+  }, [])
 
-    // Salvar todas as configurações no localStorage
-    Object.entries(configuracoes).forEach(([chave, valor]) => {
-      localStorage.setItem(`config_${chave}`, valor.toString())
+  const saveSettings = () => {
+    localStorage.setItem("configuracoes", JSON.stringify(settings))
+    toast({
+      title: "Configurações salvas",
+      description: "As configurações do sistema foram atualizadas com sucesso.",
     })
-
-    // Simular tempo de salvamento
-    setTimeout(() => {
-      setSalvando(false)
-    }, 800)
   }
 
-  const handleChange = (chave: string, valor: string | boolean) => {
-    setConfiguracoes((prev) => ({
-      ...prev,
-      [chave]: valor,
-    }))
+  const resetSettings = () => {
+    const defaultSettings = {
+      nomeCartorio: "Cartório de Registro Civil",
+      tempoMaximoAtendimento: 15,
+      tempoAlertaAtendimento: 10,
+      temaEscuro: false,
+      volumeNotificacoes: 80,
+      tiposSenha: ["Normal", "Prioritário", "Rápido"],
+      idioma: "pt-BR",
+      mostrarChatPublico: true,
+      permitirChatAnonimo: false,
+      mostrarEstatisticasPublicas: false,
+      permitirReagendamento: true,
+      horaInicioExpediente: "08:00",
+      horaFimExpediente: "17:00",
+      diasFuncionamento: ["Segunda", "Terça", "Quarta", "Quinta", "Sexta"],
+      intervaloBackupAutomatico: 30,
+    }
+
+    setSettings(defaultSettings)
+    localStorage.setItem("configuracoes", JSON.stringify(defaultSettings))
+
+    toast({
+      title: "Configurações redefinidas",
+      description: "As configurações do sistema foram restauradas para os valores padrão.",
+    })
+  }
+
+  const handleTipoSenhaChange = (index: number, value: string) => {
+    const newTipos = [...settings.tiposSenha]
+    newTipos[index] = value
+    setSettings({ ...settings, tiposSenha: newTipos })
+  }
+
+  const addTipoSenha = () => {
+    setSettings({
+      ...settings,
+      tiposSenha: [...settings.tiposSenha, `Tipo ${settings.tiposSenha.length + 1}`],
+    })
+  }
+
+  const removeTipoSenha = (index: number) => {
+    const newTipos = [...settings.tiposSenha]
+    newTipos.splice(index, 1)
+    setSettings({ ...settings, tiposSenha: newTipos })
   }
 
   return (
-    <div className="space-y-6">
-      <Tabs defaultValue="geral" className="space-y-6">
-        <TabsList className="grid grid-cols-4 w-full">
-          <TabsTrigger value="geral">Geral</TabsTrigger>
-          <TabsTrigger value="senhas">Senhas</TabsTrigger>
-          <TabsTrigger value="audio">Áudio</TabsTrigger>
-          <TabsTrigger value="notificacoes">Notificações</TabsTrigger>
-        </TabsList>
+    <Tabs defaultValue="geral" className="w-full">
+      <TabsList className="grid grid-cols-4 mb-4">
+        <TabsTrigger value="geral">Geral</TabsTrigger>
+        <TabsTrigger value="atendimento">Atendimento</TabsTrigger>
+        <TabsTrigger value="interface">Interface</TabsTrigger>
+        <TabsTrigger value="backup">Backup e Dados</TabsTrigger>
+      </TabsList>
 
-        <TabsContent value="geral">
-          <Card>
-            <CardHeader>
-              <CardTitle>Configurações Gerais</CardTitle>
-              <CardDescription>Configurações básicas do sistema</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+      <TabsContent value="geral" className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Configurações Gerais</CardTitle>
+            <CardDescription>Configure as informações básicas do sistema</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="nome-cartorio">Nome do Cartório</Label>
+              <Input
+                id="nome-cartorio"
+                value={settings.nomeCartorio}
+                onChange={(e) => setSettings({ ...settings, nomeCartorio: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="idioma">Idioma do Sistema</Label>
+              <Select value={settings.idioma} onValueChange={(value) => setSettings({ ...settings, idioma: value })}>
+                <SelectTrigger id="idioma">
+                  <SelectValue placeholder="Selecione o idioma" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pt-BR">Português (Brasil)</SelectItem>
+                  <SelectItem value="en-US">English (US)</SelectItem>
+                  <SelectItem value="es">Español</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Horário de Funcionamento</Label>
+              <div className="flex space-x-2">
+                <div className="w-1/2">
+                  <Label htmlFor="hora-inicio">Início</Label>
+                  <Input
+                    id="hora-inicio"
+                    type="time"
+                    value={settings.horaInicioExpediente}
+                    onChange={(e) => setSettings({ ...settings, horaInicioExpediente: e.target.value })}
+                  />
+                </div>
+                <div className="w-1/2">
+                  <Label htmlFor="hora-fim">Fim</Label>
+                  <Input
+                    id="hora-fim"
+                    type="time"
+                    value={settings.horaFimExpediente}
+                    onChange={(e) => setSettings({ ...settings, horaFimExpediente: e.target.value })}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 flex justify-end space-x-2">
+              <Button variant="outline" onClick={resetSettings}>
+                Restaurar Padrões
+              </Button>
+              <Button onClick={saveSettings}>Salvar Alterações</Button>
+            </div>
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      <TabsContent value="atendimento" className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Configurações de Atendimento</CardTitle>
+            <CardDescription>Configure os parâmetros de atendimento e senhas</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>Tempo Máximo de Atendimento (minutos)</Label>
+              <Slider
+                value={[settings.tempoMaximoAtendimento]}
+                min={5}
+                max={60}
+                step={1}
+                onValueChange={(value) => setSettings({ ...settings, tempoMaximoAtendimento: value[0] })}
+              />
+              <div className="text-right text-sm">{settings.tempoMaximoAtendimento} minutos</div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Tempo para Alerta de Atendimento (minutos)</Label>
+              <Slider
+                value={[settings.tempoAlertaAtendimento]}
+                min={1}
+                max={settings.tempoMaximoAtendimento}
+                step={1}
+                onValueChange={(value) => setSettings({ ...settings, tempoAlertaAtendimento: value[0] })}
+              />
+              <div className="text-right text-sm">{settings.tempoAlertaAtendimento} minutos</div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Tipos de Senha</Label>
               <div className="space-y-2">
-                <Label htmlFor="nomeCartorio">Nome do Cartório</Label>
-                <Input
-                  id="nomeCartorio"
-                  value={configuracoes.nomeCartorio}
-                  onChange={(e) => handleChange("nomeCartorio", e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="tempoAtualizacao">Tempo de Atualização (segundos)</Label>
-                <Input
-                  id="tempoAtualizacao"
-                  type="number"
-                  min="5"
-                  max="120"
-                  value={configuracoes.tempoAtualizacao}
-                  onChange={(e) => handleChange("tempoAtualizacao", e.target.value)}
-                />
-                <p className="text-xs text-gray-500">Tempo para atualização automática dos dados</p>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Label htmlFor="temaEscuro">Tema Escuro</Label>
-                <Switch
-                  id="temaEscuro"
-                  checked={configuracoes.temaEscuro}
-                  onCheckedChange={(checked) => handleChange("temaEscuro", checked)}
-                />
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="senhas">
-          <Card>
-            <CardHeader>
-              <CardTitle>Configurações de Senhas</CardTitle>
-              <CardDescription>Prefixos e formatação das senhas</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="prefixoGeral">Prefixo - Geral</Label>
-                  <Input
-                    id="prefixoGeral"
-                    maxLength={1}
-                    value={configuracoes.prefixoGeral}
-                    onChange={(e) => handleChange("prefixoGeral", e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="prefixoCasamento">Prefixo - Casamento</Label>
-                  <Input
-                    id="prefixoCasamento"
-                    maxLength={1}
-                    value={configuracoes.prefixoCasamento}
-                    onChange={(e) => handleChange("prefixoCasamento", e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="prefixoAlteracao">Prefixo - Alteração</Label>
-                  <Input
-                    id="prefixoAlteracao"
-                    maxLength={1}
-                    value={configuracoes.prefixoAlteracao}
-                    onChange={(e) => handleChange("prefixoAlteracao", e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="prefixoTraslado">Prefixo - Traslado</Label>
-                  <Input
-                    id="prefixoTraslado"
-                    maxLength={1}
-                    value={configuracoes.prefixoTraslado}
-                    onChange={(e) => handleChange("prefixoTraslado", e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="prefixoObito">Prefixo - Óbito</Label>
-                  <Input
-                    id="prefixoObito"
-                    maxLength={1}
-                    value={configuracoes.prefixoObito}
-                    onChange={(e) => handleChange("prefixoObito", e.target.value)}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="audio">
-          <Card>
-            <CardHeader>
-              <CardTitle>Configurações de Áudio</CardTitle>
-              <CardDescription>Configurações para anúncios de voz</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="audioAtivo">Áudio Ativo</Label>
-                <Switch
-                  id="audioAtivo"
-                  checked={configuracoes.audioAtivo}
-                  onCheckedChange={(checked) => handleChange("audioAtivo", checked)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="repeticoesAudio">Repetições de Áudio</Label>
-                <Select
-                  value={configuracoes.repeticoesAudio}
-                  onValueChange={(value) => handleChange("repeticoesAudio", value)}
-                >
-                  <SelectTrigger id="repeticoesAudio">
-                    <SelectValue placeholder="Selecione o número de repetições" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">1 vez</SelectItem>
-                    <SelectItem value="2">2 vezes</SelectItem>
-                    <SelectItem value="3">3 vezes</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-gray-500">Quantas vezes o áudio será repetido</p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="velocidadeAudio">Velocidade do Áudio</Label>
-                <Select
-                  value={configuracoes.velocidadeAudio}
-                  onValueChange={(value) => handleChange("velocidadeAudio", value)}
-                >
-                  <SelectTrigger id="velocidadeAudio">
-                    <SelectValue placeholder="Selecione a velocidade" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0.7">Lenta</SelectItem>
-                    <SelectItem value="0.9">Normal</SelectItem>
-                    <SelectItem value="1.1">Rápida</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="notificacoes">
-          <Card>
-            <CardHeader>
-              <CardTitle>Configurações de Notificações</CardTitle>
-              <CardDescription>Configurações para notificações do sistema</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="notificacoesAtivas">Notificações Ativas</Label>
-                <Switch
-                  id="notificacoesAtivas"
-                  checked={configuracoes.notificacoesAtivas}
-                  onCheckedChange={(checked) => handleChange("notificacoesAtivas", checked)}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Label htmlFor="notificacoesDesktop">Notificações Desktop</Label>
-                <Switch
-                  id="notificacoesDesktop"
-                  checked={configuracoes.notificacoesDesktop}
-                  onCheckedChange={(checked) => handleChange("notificacoesDesktop", checked)}
-                />
-              </div>
-
-              <div className="pt-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    if (Notification && Notification.permission !== "granted") {
-                      Notification.requestPermission()
-                    }
-                  }}
-                >
-                  Solicitar Permissão de Notificações
+                {settings.tiposSenha.map((tipo, index) => (
+                  <div key={index} className="flex items-center space-x-2">
+                    <Input value={tipo} onChange={(e) => handleTipoSenhaChange(index, e.target.value)} />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeTipoSenha(index)}
+                      disabled={settings.tiposSenha.length <= 1}
+                    >
+                      Remover
+                    </Button>
+                  </div>
+                ))}
+                <Button variant="outline" size="sm" onClick={addTipoSenha} disabled={settings.tiposSenha.length >= 10}>
+                  Adicionar Tipo
                 </Button>
-                <p className="text-xs text-gray-500 mt-1">Necessário para exibir notificações no desktop</p>
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            </div>
 
-      <div className="flex justify-end">
-        <Button onClick={salvarConfiguracoes} disabled={salvando} className="flex items-center gap-2">
-          {salvando ? (
-            <>
-              <RefreshCw className="h-4 w-4 animate-spin" />
-              Salvando...
-            </>
-          ) : (
-            <>
-              <Save className="h-4 w-4" />
-              Salvar Configurações
-            </>
-          )}
-        </Button>
-      </div>
-    </div>
+            <div className="flex items-center justify-between pt-2">
+              <div className="space-y-0.5">
+                <Label htmlFor="permitir-reagendamento">Permitir Reagendamento</Label>
+                <p className="text-sm text-muted-foreground">Permite que senhas sejam reagendadas para outro dia</p>
+              </div>
+              <Switch
+                id="permitir-reagendamento"
+                checked={settings.permitirReagendamento}
+                onCheckedChange={(checked) => setSettings({ ...settings, permitirReagendamento: checked })}
+              />
+            </div>
+
+            <div className="pt-4 flex justify-end space-x-2">
+              <Button variant="outline" onClick={resetSettings}>
+                Restaurar Padrões
+              </Button>
+              <Button onClick={saveSettings}>Salvar Alterações</Button>
+            </div>
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      <TabsContent value="interface" className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Configurações de Interface</CardTitle>
+            <CardDescription>Personalize a aparência e comportamento da interface</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="tema-escuro">Tema Escuro</Label>
+                <p className="text-sm text-muted-foreground">Ativa o modo escuro em toda a interface</p>
+              </div>
+              <Switch
+                id="tema-escuro"
+                checked={settings.temaEscuro}
+                onCheckedChange={(checked) => setSettings({ ...settings, temaEscuro: checked })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Volume das Notificações</Label>
+              <Slider
+                value={[settings.volumeNotificacoes]}
+                min={0}
+                max={100}
+                step={5}
+                onValueChange={(value) => setSettings({ ...settings, volumeNotificacoes: value[0] })}
+              />
+              <div className="text-right text-sm">{settings.volumeNotificacoes}%</div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="mostrar-chat">Mostrar Chat Público</Label>
+                <p className="text-sm text-muted-foreground">Exibe o chat para o público no painel de senhas</p>
+              </div>
+              <Switch
+                id="mostrar-chat"
+                checked={settings.mostrarChatPublico}
+                onCheckedChange={(checked) => setSettings({ ...settings, mostrarChatPublico: checked })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="chat-anonimo">Permitir Chat Anônimo</Label>
+                <p className="text-sm text-muted-foreground">Permite que usuários não identificados enviem mensagens</p>
+              </div>
+              <Switch
+                id="chat-anonimo"
+                checked={settings.permitirChatAnonimo}
+                onCheckedChange={(checked) => setSettings({ ...settings, permitirChatAnonimo: checked })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="estatisticas-publicas">Mostrar Estatísticas Públicas</Label>
+                <p className="text-sm text-muted-foreground">Exibe estatísticas básicas no painel público</p>
+              </div>
+              <Switch
+                id="estatisticas-publicas"
+                checked={settings.mostrarEstatisticasPublicas}
+                onCheckedChange={(checked) => setSettings({ ...settings, mostrarEstatisticasPublicas: checked })}
+              />
+            </div>
+
+            <div className="pt-4 flex justify-end space-x-2">
+              <Button variant="outline" onClick={resetSettings}>
+                Restaurar Padrões
+              </Button>
+              <Button onClick={saveSettings}>Salvar Alterações</Button>
+            </div>
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      <TabsContent value="backup" className="space-y-4">
+        <BackupControlPanel />
+      </TabsContent>
+    </Tabs>
   )
 }

@@ -1,5 +1,29 @@
-// Implementação usando localStorage para persistência de dados
-// Em um ambiente de produção, isso seria substituído por um banco de dados real
+import { realtimeService, RealtimeEvent } from "./realtime-service"
+
+// Obter todos os guichês
+export const obterGuiches = async (): Promise<{ id: string; nome: string }[]> => {
+  if (typeof window === "undefined") return []
+
+  // Lista padrão de guichês
+  const guichesPadrao = [
+    { id: "1", nome: "Guichê 1" },
+    { id: "2", nome: "Guichê 2" },
+    { id: "3", nome: "Guichê 3" },
+    { id: "4", nome: "Guichê 4" },
+  ]
+
+  // Verificar se há configuração personalizada
+  const guichesConfig = localStorage.getItem("guichesConfig")
+  if (guichesConfig) {
+    try {
+      return JSON.parse(guichesConfig)
+    } catch (error) {
+      console.error("Erro ao carregar configuração de guichês:", error)
+    }
+  }
+
+  return guichesPadrao
+}
 
 // Obter status dos guichês
 export const obterStatusGuiches = async (): Promise<Record<string, string>> => {
@@ -40,17 +64,18 @@ export const atualizarStatusGuiche = async (
 
   localStorage.setItem("statusGuiches", JSON.stringify(novoStatus))
 
-  // Notificar listeners
-  const evento = new CustomEvent("statusGuicheAtualizado", {
-    detail: { guiche, status, atualizadoPor },
-  })
-  window.dispatchEvent(evento)
+  // Emitir evento via serviço de tempo real
+  realtimeService.emit(RealtimeEvent.GUICHE_STATUS_CHANGED, { guiche, status, atualizadoPor })
 
   return true
 }
 
 // Escutar mudanças no status dos guichês
 export const escutarMudancasStatus = (callback: (data: any) => void): (() => void) => {
+  // Adicionar listener para eventos de tempo real
+  realtimeService.on(RealtimeEvent.GUICHE_STATUS_CHANGED, callback)
+
+  // Também escutar eventos de localStorage para compatibilidade
   const handler = (event: Event) => {
     const customEvent = event as CustomEvent
     callback(customEvent.detail)
@@ -61,8 +86,11 @@ export const escutarMudancasStatus = (callback: (data: any) => void): (() => voi
 
     return () => {
       window.removeEventListener("statusGuicheAtualizado", handler)
+      realtimeService.off(RealtimeEvent.GUICHE_STATUS_CHANGED, callback)
     }
   }
 
-  return () => {}
+  return () => {
+    realtimeService.off(RealtimeEvent.GUICHE_STATUS_CHANGED, callback)
+  }
 }

@@ -1,12 +1,23 @@
-// Implementação usando localStorage para persistência de dados
-// Em um ambiente de produção, isso seria substituído por um banco de dados real
-
 import { v4 as uuidv4 } from "uuid"
 import { formatDistanceToNow } from "date-fns"
 import { ptBR } from "date-fns/locale"
+import { realtimeService, RealtimeEvent } from "./realtime-service"
 
 // Tipos
-interface Ticket {
+export interface Senha {
+  id: string
+  numero: string
+  codigo: string
+  tipo: string
+  subtipo: string
+  horaEmissao: number
+  horaChamada?: number
+  guiche?: string
+  status: "aguardando" | "chamado" | "finalizado"
+  direcionadoPara?: string
+}
+
+export interface Ticket {
   id: string
   codigo: string
   tipo: string
@@ -66,7 +77,54 @@ const salvarTickets = (tickets: Ticket[]) => {
     // Disparar evento de atualização para sincronizar entre abas
     const evento = new CustomEvent("ticketsAtualizados", { detail: { timestamp: Date.now() } })
     window.dispatchEvent(evento)
+
+    // Fazer backup automático
+    realizarBackupAutomatico()
   }
+}
+
+// Backup automático
+let ultimoBackup = 0
+const INTERVALO_BACKUP = 30000 // 30 segundos
+
+const realizarBackupAutomatico = () => {
+  const agora = Date.now()
+  if (agora - ultimoBackup > INTERVALO_BACKUP) {
+    ultimoBackup = agora
+
+    // Salvar backup
+    const backup = {
+      tickets: obterTickets(),
+      contadores: contadores,
+      timestamp: agora,
+    }
+
+    localStorage.setItem("backup_tickets", JSON.stringify(backup))
+    localStorage.setItem("ultimo_backup_auto", new Date().toISOString())
+
+    // Emitir evento de backup
+    realtimeService.emit(RealtimeEvent.SYSTEM_BACKUP, { tipo: "auto", timestamp: agora })
+  }
+}
+
+// Obter senha atual (última senha chamada)
+export const obterSenhaAtual = async (): Promise<Senha | null> => {
+  const tickets = obterTickets()
+
+  // Encontrar a última senha chamada
+  const senhasChamadas = tickets
+    .filter((t) => t.status === "chamado")
+    .sort((a, b) => (b.horaChamada || 0) - (a.horaChamada || 0))
+
+  if (senhasChamadas.length === 0) return null
+
+  // Converter para o formato Senha
+  const senha: Senha = {
+    ...senhasChamadas[0],
+    numero: senhasChamadas[0].codigo,
+  }
+
+  return senha
 }
 
 // Gerar uma nova senha
@@ -95,6 +153,9 @@ export const gerarSenha = async (tipo: string, subtipo: string): Promise<Ticket>
   tickets.push(novaSenha)
   salvarTickets(tickets)
 
+  // Emitir evento via serviço de tempo real
+  realtimeService.emit(RealtimeEvent.TICKET_CREATED, novaSenha)
+
   return novaSenha
 }
 
@@ -122,9 +183,8 @@ export const chamarProximaSenha = async (tipo: string, subtipo: string, guiche: 
 
   salvarTickets(tickets)
 
-  // Notificar listeners (em uma implementação real, isso poderia ser um websocket)
-  const evento = new CustomEvent("senhaChamada", { detail: tickets[index] })
-  window.dispatchEvent(evento)
+  // Emitir evento via serviço de tempo real
+  realtimeService.emit(RealtimeEvent.TICKET_CALLED, tickets[index])
 
   // Armazenar a última senha chamada no localStorage para sincronização entre abas
   localStorage.setItem("ultimaSenhaChamada", JSON.stringify(tickets[index]))
@@ -144,9 +204,8 @@ export const direcionarSenha = async (senhaId: string, guiche: string): Promise<
 
   salvarTickets(tickets)
 
-  // Notificar listeners
-  const evento = new CustomEvent("senhaDirecionada", { detail: tickets[index] })
-  window.dispatchEvent(evento)
+  // Emitir evento via serviço de tempo real
+  realtimeService.emit(RealtimeEvent.TICKET_DIRECTED, tickets[index])
 
   return true
 }
@@ -163,9 +222,8 @@ export const reemitirChamada = async (id: string): Promise<boolean> => {
 
   salvarTickets(tickets)
 
-  // Notificar listeners
-  const evento = new CustomEvent("senhaChamada", { detail: tickets[index] })
-  window.dispatchEvent(evento)
+  // Emitir evento via serviço de tempo real
+  realtimeService.emit(RealtimeEvent.TICKET_CALLED, tickets[index])
 
   // Armazenar a última senha chamada no localStorage para sincronização entre abas
   localStorage.setItem("ultimaSenhaChamada", JSON.stringify(tickets[index]))
@@ -203,6 +261,11 @@ export const obterTodasSenhas = async (): Promise<Ticket[]> => {
 
 // Escutar mudanças nas senhas
 export const escutarMudancas = (callback: (senha: Ticket) => void): (() => void) => {
+  // Adicionar listener para eventos de tempo real
+  realtimeService.on(RealtimeEvent.TICKET_CALLED, callback)
+  realtimeService.on(RealtimeEvent.TICKET_DIRECTED, callback)
+
+  // Também escutar eventos de localStorage para compatibilidade
   const handler = (event: Event) => {
     const customEvent = event as CustomEvent
     callback(customEvent.detail)
@@ -223,15 +286,22 @@ export const escutarMudancas = (callback: (senha: Ticket) => void): (() => void)
 
   if (typeof window !== "undefined") {
     window.addEventListener("senhaChamada", handler)
+    window.addEventListener("senhaDirecionada", handler)
     window.addEventListener("ticketsAtualizados", handlerTicketsAtualizados)
 
     return () => {
       window.removeEventListener("senhaChamada", handler)
+      window.removeEventListener("senhaDirecionada", handler)
       window.removeEventListener("ticketsAtualizados", handlerTicketsAtualizados)
+      realtimeService.off(RealtimeEvent.TICKET_CALLED, callback)
+      realtimeService.off(RealtimeEvent.TICKET_DIRECTED, callback)
     }
   }
 
-  return () => {}
+  return () => {
+    realtimeService.off(RealtimeEvent.TICKET_CALLED, callback)
+    realtimeService.off(RealtimeEvent.TICKET_DIRECTED, callback)
+  }
 }
 
 // Finalizar atendimento de uma senha
@@ -260,6 +330,9 @@ export const finalizarAtendimento = async (id: string, usuarioId: string): Promi
 
   salvarTickets(tickets)
 
+  // Emitir evento via serviço de tempo real
+  realtimeService.emit(RealtimeEvent.TICKET_COMPLETED, tickets[index])
+
   return true
 }
 
@@ -276,6 +349,13 @@ export const exportarDadosSenhas = (): string => {
     dataExportacao: new Date().toISOString(),
   }
 
+  // Salvar como backup manual
+  localStorage.setItem("ultimo_backup_manual", new Date().toISOString())
+  localStorage.setItem("backup_manual", JSON.stringify(dados))
+
+  // Emitir evento de backup
+  realtimeService.emit(RealtimeEvent.SYSTEM_BACKUP, { tipo: "manual", timestamp: Date.now() })
+
   return JSON.stringify(dados, null, 2)
 }
 
@@ -290,15 +370,58 @@ export const importarDadosSenhas = (dadosJSON: string): boolean => {
 
     if (dados.contadores) {
       localStorage.setItem("contadores", JSON.stringify(dados.contadores))
+      contadores = dados.contadores
     }
 
     if (dados.historicoAtendimentos) {
       localStorage.setItem("historicoAtendimentos", JSON.stringify(dados.historicoAtendimentos))
     }
 
+    // Emitir evento de backup restaurado
+    realtimeService.emit(RealtimeEvent.SYSTEM_RESTORE, { tipo: "restaurado", timestamp: Date.now() })
+
     return true
   } catch (error) {
     console.error("Erro ao importar dados:", error)
     return false
   }
+}
+
+// Restaurar backup automático
+export const restaurarBackupAutomatico = (): boolean => {
+  try {
+    const backupJSON = localStorage.getItem("backup_tickets")
+    if (!backupJSON) return false
+
+    const backup = JSON.parse(backupJSON)
+
+    localStorage.setItem("tickets", JSON.stringify(backup.tickets))
+    localStorage.setItem("contadores", JSON.stringify(backup.contadores))
+    contadores = backup.contadores
+
+    return true
+  } catch (error) {
+    console.error("Erro ao restaurar backup automático:", error)
+    return false
+  }
+}
+
+// Verificar e restaurar backup se necessário
+export const verificarERestaurarBackup = (): void => {
+  try {
+    const tickets = obterTickets()
+    if (tickets.length === 0) {
+      // Tentar restaurar do backup automático
+      restaurarBackupAutomatico()
+    }
+  } catch (error) {
+    console.error("Erro ao verificar backup:", error)
+  }
+}
+
+// Inicializar verificação de backup
+if (typeof window !== "undefined") {
+  setTimeout(() => {
+    verificarERestaurarBackup()
+  }, 1000)
 }
