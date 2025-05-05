@@ -20,6 +20,8 @@ import { AdminSystemSettings } from "@/components/admin-system-settings"
 import { AdminDashboardCharts } from "@/components/admin-dashboard-charts"
 import { ThothFloatingChat } from "@/components/thoth-floating-chat"
 import Link from "next/link"
+// Importar o componente de status de sincronização
+import { SyncStatusPanel } from "@/components/sync-status-panel"
 
 export default function AdminDashboardPage() {
   const router = useRouter()
@@ -234,6 +236,13 @@ export default function AdminDashboardPage() {
               <p className="text-sm text-gray-500">Usuários registrados</p>
             </CardContent>
           </Card>
+        </div>
+
+        {/* Adicionar o componente na seção de painéis do dashboard */}
+        {/* Procure uma seção com grid ou flex onde estão os outros painéis e adicione: */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* Outros painéis existentes */}
+          <SyncStatusPanel />
         </div>
 
         <Tabs defaultValue="dashboard" className="space-y-6">

@@ -6,9 +6,18 @@ import { toast } from "@/components/ui/use-toast"
 export class BackupService {
   private static instance: BackupService
   private autoBackupInterval: NodeJS.Timeout | null = null
-  private autoBackupFrequency = 30000 // 30 segundos
+  private autoBackupFrequency = 5 * 60 * 1000 // 5 minutos
   private dailyBackupTimeout: NodeJS.Timeout | null = null
-  private backupKeys: string[] = ["tickets", "guiches", "chat_messages", "usuarios", "configuracoes", "estatisticas"]
+  private backupKeys: string[] = [
+    "tickets",
+    "guiches",
+    "chat_messages",
+    "usuarios",
+    "configuracoes",
+    "estatisticas",
+    "contadores",
+    "historicoAtendimentos",
+  ]
 
   private constructor() {
     // Construtor privado para singleton
@@ -74,8 +83,8 @@ export class BackupService {
   }
 
   // Criar backup
-  public createBackup(type: "manual" | "auto" | "daily"): void {
-    if (typeof window === "undefined") return
+  public createBackup(type: "manual" | "auto" | "daily"): string | null {
+    if (typeof window === "undefined") return null
 
     try {
       const backup: Record<string, any> = {}
@@ -93,6 +102,7 @@ export class BackupService {
           timestamp,
           type,
           version: "1.0",
+          clientId: realtimeService.getSocketId() || "unknown",
         },
       }
 
@@ -117,6 +127,7 @@ export class BackupService {
           type,
           timestamp,
           size: JSON.stringify(backupData).length,
+          clientId: realtimeService.getSocketId(),
         })
       }
 

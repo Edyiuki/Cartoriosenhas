@@ -7,6 +7,7 @@ import { initRealtimeService, realtimeService, RealtimeEvent } from "@/lib/realt
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle, Wifi, WifiOff, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { toast } from "@/components/ui/use-toast"
 
 export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const [isConnected, setIsConnected] = useState(true) // Assumir conectado inicialmente
@@ -24,11 +25,31 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       setShowReconnecting(false)
       setConnectionError(null)
       setClientId(realtimeService.getClientId())
+
+      // Notificar apenas se reconectando (não na primeira conexão)
+      if (sessionStorage.getItem("had_connection") === "true") {
+        toast({
+          title: "Conexão restabelecida",
+          description: "Você está conectado ao servidor novamente.",
+          variant: "default",
+        })
+      }
+
+      sessionStorage.setItem("had_connection", "true")
     }
 
     const handleDisconnect = () => {
       setIsConnected(false)
       setShowReconnecting(true)
+
+      // Notificar apenas se já teve conexão antes
+      if (sessionStorage.getItem("had_connection") === "true") {
+        toast({
+          title: "Conexão perdida",
+          description: "Tentando reconectar automaticamente...",
+          variant: "destructive",
+        })
+      }
     }
 
     const handleError = (error: any) => {
@@ -42,6 +63,9 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     // Verificar status inicial
     setIsConnected(realtimeService.isConnected())
     setClientId(realtimeService.getClientId())
+    if (realtimeService.isConnected()) {
+      sessionStorage.setItem("had_connection", "true")
+    }
 
     return () => {
       realtimeService.off(RealtimeEvent.CONNECT, handleConnect)

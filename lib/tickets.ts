@@ -55,26 +55,101 @@ const inicializarContadores = () => {
   }
 }
 
-// Obter tickets do localStorage
+// Modificar a função obterTickets para verificar se há dados no localStorage e fazer backup automático
+
+// Obter tickets do localStorage com verificação de integridade
 const obterTickets = (): Ticket[] => {
   if (typeof window !== "undefined") {
-    const tickets = localStorage.getItem("tickets")
-    return tickets ? JSON.parse(tickets) : []
+    try {
+      const tickets = localStorage.getItem("tickets")
+      const parsedTickets = tickets ? JSON.parse(tickets) : []
+
+      // Verificar se o formato dos dados é válido
+      if (!Array.isArray(parsedTickets)) {
+        console.error("Formato de tickets inválido, restaurando do backup")
+        return restaurarBackupAutomatico() ? obterTickets() : []
+      }
+
+      return parsedTickets
+    } catch (error) {
+      console.error("Erro ao obter tickets:", error)
+
+      // Tentar restaurar do backup em caso de erro
+      return restaurarBackupAutomatico() ? obterTickets() : []
+    }
   }
   return []
 }
 
-// Salvar tickets no localStorage
+// Salvar tickets no localStorage com verificação de erro
 const salvarTickets = (tickets: Ticket[]) => {
   if (typeof window !== "undefined") {
-    localStorage.setItem("tickets", JSON.stringify(tickets))
+    try {
+      localStorage.setItem("tickets", JSON.stringify(tickets))
 
-    // Disparar evento de atualização para sincronizar entre abas
-    const evento = new CustomEvent("ticketsAtualizados", { detail: { timestamp: Date.now() } })
-    window.dispatchEvent(evento)
+      // Disparar evento de atualização para sincronizar entre abas
+      const evento = new CustomEvent("ticketsAtualizados", { detail: { timestamp: Date.now() } })
+      window.dispatchEvent(evento)
 
-    // Fazer backup automático
-    realizarBackupAutomatico()
+      // Fazer backup automático
+      realizarBackupAutomatico()
+
+      return true
+    } catch (error) {
+      console.error("Erro ao salvar tickets:", error)
+
+      // Notificar o usuário sobre o erro
+      if (error instanceof DOMException && error.name === "QuotaExceededError") {
+        // Limpar dados antigos se o armazenamento estiver cheio
+        limparDadosAntigos()
+
+        // Tentar salvar novamente
+        try {
+          localStorage.setItem("tickets", JSON.stringify(tickets))
+          return true
+        } catch (retryError) {
+          console.error("Erro ao salvar tickets após limpeza:", retryError)
+          return false
+        }
+      }
+
+      return false
+    }
+  }
+  return false
+}
+
+// Limpar dados antigos para liberar espaço
+const limparDadosAntigos = () => {
+  if (typeof window !== "undefined") {
+    try {
+      const tickets = obterTickets()
+
+      // Manter apenas os tickets dos últimos 30 dias
+      const trintaDiasAtras = Date.now() - 30 * 24 * 60 * 60 * 1000
+      const ticketsRecentes = tickets.filter(
+        (ticket) =>
+          ticket.status === "aguardando" || ticket.status === "chamado" || ticket.horaEmissao > trintaDiasAtras,
+      )
+
+      // Salvar tickets recentes
+      localStorage.setItem("tickets", JSON.stringify(ticketsRecentes))
+
+      // Limpar backups antigos
+      const keys = Object.keys(localStorage)
+      const backupKeys = keys.filter((key) => key.startsWith("backup_"))
+
+      // Manter apenas os 5 backups mais recentes
+      if (backupKeys.length > 5) {
+        backupKeys.sort()
+        const keysToRemove = backupKeys.slice(0, backupKeys.length - 5)
+        keysToRemove.forEach((key) => localStorage.removeItem(key))
+      }
+
+      console.log("Dados antigos limpos para liberar espaço")
+    } catch (error) {
+      console.error("Erro ao limpar dados antigos:", error)
+    }
   }
 }
 
@@ -102,7 +177,7 @@ const realizarBackupAutomatico = () => {
   }
 }
 
-// Gerar uma nova senha
+// Modificar a função gerarSenha para melhor sincronização
 export const gerarSenha = async (tipo: string, subtipo: string): Promise<Ticket> => {
   inicializarContadores()
 
@@ -126,7 +201,11 @@ export const gerarSenha = async (tipo: string, subtipo: string): Promise<Ticket>
   // Salvar no localStorage
   const tickets = obterTickets()
   tickets.push(novaSenha)
-  salvarTickets(tickets)
+
+  // Tentar salvar e verificar se foi bem-sucedido
+  if (!salvarTickets(tickets)) {
+    throw new Error("Não foi possível salvar a nova senha")
+  }
 
   // Emitir evento via serviço de tempo real
   realtimeService.emit(RealtimeEvent.TICKET_CREATED, novaSenha)
