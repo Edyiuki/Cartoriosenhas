@@ -1,13 +1,15 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { obterSenhaAtual, obterSenhasChamadas, type Senha } from "@/lib/tickets"
 import { obterGuiches } from "@/lib/guiches"
 import { realtimeService, RealtimeEvent } from "@/lib/realtime-service"
-import { obterSenhaAtual, obterSenhasChamadas, type Senha } from "@/lib/tickets"
-import { RefreshCw, Volume2, VolumeX } from "lucide-react"
+import { RefreshCw, Volume2, VolumeX, AlertTriangle } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { errorMonitoring, tryCatch } from "@/lib/error-monitoring"
 
 export default function PainelPage() {
   const [senhaAtual, setSenhaAtual] = useState<Senha | null>(null)
@@ -16,18 +18,44 @@ export default function PainelPage() {
   const [isConnected, setIsConnected] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [audioEnabled, setAudioEnabled] = useState(true)
+  const [audioSupported, setAudioSupported] = useState(true)
+  const [animateSenha, setAnimateSenha] = useState(false)
   const lastCalledSenhaRef = useRef<string | null>(null)
   const synth = useRef<SpeechSynthesis | null>(null)
+  const voicesLoaded = useRef<boolean>(false)
+  const availableVoices = useRef<SpeechSynthesisVoice[]>([])
 
-  // Inicializar a síntese de voz
+  // Verificar suporte à síntese de voz
   useEffect(() => {
     if (typeof window !== "undefined") {
-      synth.current = window.speechSynthesis
+      if ("speechSynthesis" in window) {
+        synth.current = window.speechSynthesis
+        setAudioSupported(true)
 
-      // Carregar preferência de áudio do localStorage
-      const savedAudioPref = localStorage.getItem("painel_audio_enabled")
-      if (savedAudioPref !== null) {
-        setAudioEnabled(savedAudioPref === "true")
+        // Carregar vozes disponíveis
+        const loadVoices = () => {
+          availableVoices.current = synth.current?.getVoices() || []
+          voicesLoaded.current = true
+          console.log(`${availableVoices.current.length} vozes disponíveis`)
+        }
+
+        // Algumas navegadores carregam as vozes de forma assíncrona
+        if (synth.current.onvoiceschanged !== undefined) {
+          synth.current.onvoiceschanged = loadVoices
+        }
+
+        // Tentar carregar vozes imediatamente também
+        loadVoices()
+
+        // Carregar preferência de áudio do localStorage
+        const savedAudioPref = localStorage.getItem("painel_audio_enabled")
+        if (savedAudioPref !== null) {
+          setAudioEnabled(savedAudioPref === "true")
+        }
+      } else {
+        setAudioSupported(false)
+        setAudioEnabled(false)
+        console.warn("Síntese de voz não suportada neste navegador")
       }
     }
 
@@ -41,59 +69,78 @@ export default function PainelPage() {
 
   // Função para falar a senha chamada
   const speakSenha = (senha: Senha) => {
-    if (!audioEnabled || !synth.current) return
+    if (!audioEnabled || !audioSupported || !synth.current) return
 
-    // Cancelar qualquer fala em andamento
-    synth.current.cancel()
+    try {
+      // Cancelar qualquer fala em andamento
+      synth.current.cancel()
 
-    // Criar o texto a ser falado
-    const guicheNome = senha.guiche ? obterNomeGuiche(senha.guiche) : ""
-    const textoParaFalar = `Senha ${senha.numero.split("").join(" ")}. ${senha.tipo}. Guichê ${guicheNome}.`
+      // Criar o texto a ser falado
+      const guicheNome = senha.guiche ? obterNomeGuiche(senha.guiche) : ""
+      const textoParaFalar = `Senha ${senha.numero.split("").join(" ")}. ${senha.tipo}. Guichê ${guicheNome}.`
 
-    // Criar um novo objeto de fala
-    const utterance = new SpeechSynthesisUtterance(textoParaFalar)
+      // Criar um novo objeto de fala
+      const utterance = new SpeechSynthesisUtterance(textoParaFalar)
 
-    // Configurar a voz (mais robótica)
-    utterance.rate = 0.9 // Velocidade um pouco mais lenta
-    utterance.pitch = 0.8 // Tom mais baixo para soar mais robótico
-    utterance.volume = 1.0
+      // Configurar a voz (mais robótica)
+      utterance.rate = 0.9 // Velocidade um pouco mais lenta
+      utterance.pitch = 0.8 // Tom mais baixo para soar mais robótico
+      utterance.volume = 1.0
 
-    // Tentar encontrar uma voz em português
-    const voices = synth.current.getVoices()
-    const ptVoice = voices.find((voice) => voice.lang.includes("pt") || voice.lang.includes("PT"))
+      // Tentar encontrar uma voz em português
+      if (voicesLoaded.current && availableVoices.current.length > 0) {
+        const ptVoice = availableVoices.current.find((voice) => voice.lang.includes("pt") || voice.lang.includes("PT"))
 
-    if (ptVoice) {
-      utterance.voice = ptVoice
+        if (ptVoice) {
+          utterance.voice = ptVoice
+        }
+      }
+
+      // Falar
+      synth.current.speak(utterance)
+    } catch (error) {
+      console.error("Erro ao sintetizar voz:", error)
+      errorMonitoring.logError({
+        message: "Erro ao sintetizar voz",
+        source: "painel-page",
+        error: error instanceof Error ? error : new Error(String(error)),
+        timestamp: Date.now(),
+        userAgent: navigator.userAgent,
+        url: window.location.href,
+      })
     }
-
-    // Falar
-    synth.current.speak(utterance)
   }
 
   const carregarDados = async () => {
     setIsLoading(true)
     try {
       // Obter senha atual
-      const senha = await obterSenhaAtual()
+      const senha = await tryCatch(async () => await obterSenhaAtual(), "Erro ao obter senha atual")
 
       // Obter últimas senhas chamadas
-      const senhasChamadas = await obterSenhasChamadas()
+      const senhasChamadas =
+        (await tryCatch(async () => await obterSenhasChamadas(), "Erro ao obter senhas chamadas")) || []
 
       // Atualizar estado
       if (senha) {
         setSenhaAtual(senha)
 
-        // Verificar se é uma nova senha para falar
+        // Verificar se é uma nova senha para falar e animar
         if (senha.id !== lastCalledSenhaRef.current) {
           lastCalledSenhaRef.current = senha.id
           speakSenha(senha)
+
+          // Animar a senha atual
+          setAnimateSenha(true)
+          setTimeout(() => setAnimateSenha(false), 3000)
         }
       }
 
       setUltimasSenhas(senhasChamadas)
 
       // Obter guichês
-      const guichesData = await obterGuiches()
+      const guichesData = (await tryCatch(async () => await obterGuiches(), "Erro ao obter guichês")) || []
+
       setGuiches(guichesData)
     } catch (error) {
       console.error("Erro ao carregar dados do painel:", error)
@@ -120,18 +167,21 @@ export default function PainelPage() {
         return novasSenhas.slice(0, 4)
       })
 
-      // Falar a nova senha
+      // Falar a nova senha e animar
       if (senha.id !== lastCalledSenhaRef.current) {
         lastCalledSenhaRef.current = senha.id
         speakSenha(senha)
+
+        // Animar a senha atual
+        setAnimateSenha(true)
+        setTimeout(() => setAnimateSenha(false), 3000)
       }
     }
 
     // Escutar eventos de tempo real
     realtimeService.on(RealtimeEvent.TICKET_CALLED, handleNovaSenhaChamada)
-    realtimeService.on(RealtimeEvent.CONNECTION_STATUS_CHANGED, (status) => {
-      setIsConnected(status.connected)
-    })
+    realtimeService.on(RealtimeEvent.CONNECT, () => setIsConnected(true))
+    realtimeService.on(RealtimeEvent.DISCONNECT, () => setIsConnected(false))
 
     // Verificar status inicial de conexão
     setIsConnected(realtimeService.isConnected())
@@ -143,7 +193,8 @@ export default function PainelPage() {
 
     return () => {
       realtimeService.off(RealtimeEvent.TICKET_CALLED, handleNovaSenhaChamada)
-      realtimeService.off(RealtimeEvent.CONNECTION_STATUS_CHANGED)
+      realtimeService.off(RealtimeEvent.CONNECT)
+      realtimeService.off(RealtimeEvent.DISCONNECT)
       clearInterval(intervalId)
     }
   }, [])
@@ -156,6 +207,15 @@ export default function PainelPage() {
 
   // Função para alternar o áudio
   const toggleAudio = () => {
+    if (!audioSupported) {
+      toast({
+        title: "Áudio não suportado",
+        description: "Seu navegador não suporta síntese de voz",
+        variant: "destructive",
+      })
+      return
+    }
+
     const newState = !audioEnabled
     setAudioEnabled(newState)
     localStorage.setItem("painel_audio_enabled", newState.toString())
@@ -171,6 +231,10 @@ export default function PainelPage() {
   const rechamarSenhaAtual = () => {
     if (senhaAtual) {
       speakSenha(senhaAtual)
+
+      // Animar a senha atual
+      setAnimateSenha(true)
+      setTimeout(() => setAnimateSenha(false), 3000)
 
       toast({
         title: "Senha chamada novamente",
@@ -190,6 +254,7 @@ export default function PainelPage() {
             variant="outline"
             size="icon"
             onClick={toggleAudio}
+            disabled={!audioSupported}
             title={audioEnabled ? "Desativar áudio" : "Ativar áudio"}
             className="border-gray-700 text-gray-300 hover:text-white hover:bg-gray-800"
           >
@@ -208,18 +273,44 @@ export default function PainelPage() {
         </div>
       </header>
 
+      {!audioSupported && (
+        <Alert variant="warning" className="mt-4 bg-yellow-900 border-yellow-800">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Síntese de voz não suportada</AlertTitle>
+          <AlertDescription>
+            Seu navegador não suporta a síntese de voz. As senhas não serão chamadas em voz alta.
+          </AlertDescription>
+        </Alert>
+      )}
+
       <main className="flex-grow grid grid-cols-1 md:grid-cols-3 gap-8 py-8">
         <div className="md:col-span-2">
-          <Card className="bg-gray-900 border-gray-800 h-full">
+          <Card
+            className={`bg-gray-900 border-gray-800 h-full transition-all duration-500 ${
+              animateSenha ? "border-4 border-green-500 shadow-lg shadow-green-900/50" : ""
+            }`}
+          >
             <CardContent className="flex flex-col items-center justify-center h-full p-8">
               <h2 className="text-2xl mb-4">Senha Atual</h2>
 
               {senhaAtual ? (
                 <>
-                  <div className="text-9xl font-bold mb-4">{senhaAtual.numero}</div>
+                  <div
+                    className={`text-9xl font-bold mb-4 transition-all duration-500 ${
+                      animateSenha ? "scale-110 text-green-400" : ""
+                    }`}
+                  >
+                    {senhaAtual.numero}
+                  </div>
                   <div className="text-3xl">{senhaAtual.tipo}</div>
                   {senhaAtual.guiche && (
-                    <div className="mt-4 text-4xl font-semibold">Guichê: {obterNomeGuiche(senhaAtual.guiche)}</div>
+                    <div
+                      className={`mt-4 text-4xl font-semibold transition-all duration-500 ${
+                        animateSenha ? "text-green-400" : ""
+                      }`}
+                    >
+                      Guichê: {obterNomeGuiche(senhaAtual.guiche)}
+                    </div>
                   )}
                   <Button
                     variant="outline"
@@ -246,7 +337,10 @@ export default function PainelPage() {
                   ultimasSenhas.map(
                     (senha, index) =>
                       index > 0 && (
-                        <div key={senha.id} className="flex justify-between items-center border-b border-gray-800 pb-2">
+                        <div
+                          key={senha.id}
+                          className="flex justify-between items-center border-b border-gray-800 pb-2 hover:bg-gray-800 p-2 rounded transition-colors"
+                        >
                           <div className="text-2xl font-semibold">{senha.numero}</div>
                           <div className="text-lg">{senha.tipo}</div>
                           {senha.guiche && <div className="text-lg">Guichê: {obterNomeGuiche(senha.guiche)}</div>}

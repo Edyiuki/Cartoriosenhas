@@ -1,27 +1,54 @@
-// Serviço de sincronização para garantir que o sistema funcione em modo multiusuário
+// Serviço de sincronização aprimorado para resolver conflitos de dados
 import { realtimeService, RealtimeEvent } from "./realtime-service"
 import { backupService } from "./backup-service"
-import { localStorageService } from "./local-storage-service"
+import { storageService } from "./storage-service"
+import { toast } from "@/components/ui/use-toast"
 
 // Tipos de eventos de sincronização
 export enum SyncEvent {
-  DATA_UPDATED = "sync:data-updated",
-  DATA_REQUESTED = "sync:data-requested",
-  DATA_RESPONSE = "sync:data-response",
-  PEER_CONNECTED = "sync:peer-connected",
-  PEER_DISCONNECTED = "sync:peer-disconnected",
+  REQUEST_SYNC = "sync:request",
+  PROVIDE_SYNC = "sync:provide",
+  SYNC_COMPLETE = "sync:complete",
+  SYNC_ERROR = "sync:error",
+  DATA_CHANGED = "sync:data-changed",
 }
 
-// Classe para gerenciar a sincronização entre múltiplos usuários
+// Interface para metadados de sincronização
+interface SyncMetadata {
+  version: number
+  timestamp: number
+  clientId: string
+}
+
+// Classe para gerenciar a sincronização de dados
 class SyncService {
   private static instance: SyncService
   private isInitialized = false
-  private lastSyncTimestamp = 0
+  private syncInProgress = false
+  private lastSyncTime = 0
   private syncInterval: NodeJS.Timeout | null = null
-  private connectedPeers: Set<string> = new Set()
+  private syncIntervalTime = 5 * 60 * 1000 // 5 minutos
+  private dataKeys = [
+    "tickets",
+    "guiches",
+    "contadores",
+    "historicoAtendimentos",
+    "chat_messages",
+    "usuarios",
+    "configuracoes",
+  ]
+  private clientId = ""
 
   private constructor() {
     // Construtor privado para singleton
+    if (typeof window !== "undefined") {
+      this.clientId = this.generateClientId()
+    }
+  }
+
+  private generateClientId(): string {
+    // Gerar ID único para este cliente
+    return Date.now().toString(36) + Math.random().toString(36).substring(2)
   }
 
   public static getInstance(): SyncService {
@@ -34,42 +61,32 @@ class SyncService {
   public initialize(): void {
     if (this.isInitialized || typeof window === "undefined") return
 
-    console.log("Inicializando serviço de sincronização...")
+    console.log("Inicializando serviço de sincronização")
 
     // Configurar listeners para eventos de sincronização
-    realtimeService.on(SyncEvent.DATA_UPDATED, this.handleDataUpdated)
-    realtimeService.on(SyncEvent.DATA_REQUESTED, this.handleDataRequested)
-    realtimeService.on(SyncEvent.DATA_RESPONSE, this.handleDataResponse)
-    realtimeService.on(SyncEvent.PEER_CONNECTED, this.handlePeerConnected)
-    realtimeService.on(SyncEvent.PEER_DISCONNECTED, this.handlePeerDisconnected)
-    realtimeService.on(RealtimeEvent.CONNECT, this.handleConnect)
-    realtimeService.on(RealtimeEvent.DISCONNECT, this.handleDisconnect)
+    realtimeService.on(RealtimeEvent.CONNECT, this.handleConnect.bind(this))
+    realtimeService.on(SyncEvent.REQUEST_SYNC, this.handleSyncRequest.bind(this))
+    realtimeService.on(SyncEvent.PROVIDE_SYNC, this.handleSyncData.bind(this))
+    realtimeService.on(SyncEvent.SYNC_ERROR, this.handleSyncError.bind(this))
+    realtimeService.on(SyncEvent.DATA_CHANGED, this.handleDataChanged.bind(this))
 
-    // Iniciar intervalo de sincronização
+    // Iniciar verificação periódica de sincronização
     this.syncInterval = setInterval(() => {
-      this.checkForUpdates()
-    }, 60000) // Verificar atualizações a cada minuto
+      this.checkAndRequestSync()
+    }, this.syncIntervalTime)
 
     this.isInitialized = true
-
-    // Anunciar conexão para outros peers
-    this.announceConnection()
-
-    // Solicitar dados atualizados ao se conectar
-    this.requestLatestData()
   }
 
   public shutdown(): void {
     if (!this.isInitialized) return
 
     // Remover listeners
-    realtimeService.off(SyncEvent.DATA_UPDATED, this.handleDataUpdated)
-    realtimeService.off(SyncEvent.DATA_REQUESTED, this.handleDataRequested)
-    realtimeService.off(SyncEvent.DATA_RESPONSE, this.handleDataResponse)
-    realtimeService.off(SyncEvent.PEER_CONNECTED, this.handlePeerConnected)
-    realtimeService.off(SyncEvent.PEER_DISCONNECTED, this.handlePeerDisconnected)
-    realtimeService.off(RealtimeEvent.CONNECT, this.handleConnect)
-    realtimeService.off(RealtimeEvent.DISCONNECT, this.handleDisconnect)
+    realtimeService.off(RealtimeEvent.CONNECT, this.handleConnect.bind(this))
+    realtimeService.off(SyncEvent.REQUEST_SYNC, this.handleSyncRequest.bind(this))
+    realtimeService.off(SyncEvent.PROVIDE_SYNC, this.handleSyncData.bind(this))
+    realtimeService.off(SyncEvent.SYNC_ERROR, this.handleSyncError.bind(this))
+    realtimeService.off(SyncEvent.DATA_CHANGED, this.handleDataChanged.bind(this))
 
     // Parar intervalo de sincronização
     if (this.syncInterval) {
@@ -80,128 +97,249 @@ class SyncService {
     this.isInitialized = false
   }
 
-  private handleConnect = () => {
-    // Anunciar conexão para outros peers
-    this.announceConnection()
-
-    // Solicitar dados atualizados ao se conectar
-    this.requestLatestData()
+  // Manipular evento de conexão
+  private handleConnect(): void {
+    // Ao conectar, verificar se precisa sincronizar
+    setTimeout(() => {
+      this.requestSync()
+    }, 2000) // Aguardar 2 segundos para garantir que a conexão está estável
   }
 
-  private handleDisconnect = () => {
-    // Limpar lista de peers conectados
-    this.connectedPeers.clear()
+  // Verificar se é necessário sincronizar e solicitar sincronização
+  private checkAndRequestSync(): void {
+    if (this.syncInProgress) return
+
+    const now = Date.now()
+    if (now - this.lastSyncTime > this.syncIntervalTime) {
+      this.requestSync()
+    }
   }
 
-  private announceConnection = () => {
-    realtimeService.emit(SyncEvent.PEER_CONNECTED, {
-      clientId: realtimeService.getClientId(),
+  // Solicitar sincronização de dados
+  public requestSync(): void {
+    if (this.syncInProgress || !realtimeService.isConnected()) return
+
+    console.log("Solicitando sincronização de dados")
+    this.syncInProgress = true
+
+    // Enviar solicitação de sincronização
+    realtimeService.emit(SyncEvent.REQUEST_SYNC, {
+      clientId: this.clientId,
       timestamp: Date.now(),
     })
+
+    // Definir timeout para caso não receba resposta
+    setTimeout(() => {
+      if (this.syncInProgress) {
+        console.log("Timeout na sincronização")
+        this.syncInProgress = false
+      }
+    }, 10000) // 10 segundos de timeout
   }
 
-  private handlePeerConnected = (data: any) => {
-    if (data.clientId !== realtimeService.getClientId()) {
-      console.log(`Peer conectado: ${data.clientId}`)
-      this.connectedPeers.add(data.clientId)
+  // Manipular solicitação de sincronização
+  private handleSyncRequest(data: any): void {
+    if (!realtimeService.isConnected()) return
+
+    // Verificar se a solicitação não é do próprio cliente
+    if (data.clientId === this.clientId) return
+
+    console.log("Recebida solicitação de sincronização de", data.clientId)
+
+    // Coletar dados para sincronização
+    this.collectDataAndRespond(data.clientId)
+  }
+
+  // Coletar dados e responder à solicitação de sincronização
+  private async collectDataAndRespond(requestClientId: string): Promise<void> {
+    try {
+      const syncData: Record<string, any> = {}
+      const syncMetadata: Record<string, SyncMetadata> = {}
+
+      // Coletar dados e metadados para cada chave
+      for (const key of this.dataKeys) {
+        const data = await storageService.loadData(key, null)
+        if (data) {
+          syncData[key] = data
+
+          // Obter metadados de sincronização
+          const metadataKey = `${key}_metadata`
+          const metadata = await storageService.loadData<SyncMetadata>(metadataKey, {
+            version: 1,
+            timestamp: Date.now(),
+            clientId: this.clientId,
+          })
+
+          syncMetadata[key] = metadata
+        }
+      }
+
+      // Enviar dados para o cliente que solicitou
+      realtimeService.emit(SyncEvent.PROVIDE_SYNC, {
+        clientId: requestClientId,
+        providerId: this.clientId,
+        timestamp: Date.now(),
+        data: syncData,
+        metadata: syncMetadata,
+      })
+    } catch (error) {
+      console.error("Erro ao coletar dados para sincronização:", error)
     }
   }
 
-  private handlePeerDisconnected = (data: any) => {
-    if (data.clientId !== realtimeService.getClientId()) {
-      console.log(`Peer desconectado: ${data.clientId}`)
-      this.connectedPeers.delete(data.clientId)
+  // Manipular dados de sincronização recebidos
+  private async handleSyncData(data: any): Promise<void> {
+    // Verificar se os dados são para este cliente
+    if (data.clientId !== this.clientId) return
+
+    console.log("Recebidos dados de sincronização de", data.providerId)
+
+    try {
+      // Verificar se há dados para sincronizar
+      if (!data.data || !data.metadata) {
+        throw new Error("Dados de sincronização inválidos")
+      }
+
+      // Mesclar dados recebidos com dados locais
+      await this.mergeData(data.data, data.metadata)
+
+      // Atualizar timestamp da última sincronização
+      this.lastSyncTime = Date.now()
+      this.syncInProgress = false
+
+      // Notificar que a sincronização foi concluída
+      toast({
+        title: "Sincronização concluída",
+        description: "Os dados foram sincronizados com sucesso",
+        variant: "default",
+      })
+
+      console.log("Sincronização concluída com sucesso")
+    } catch (error) {
+      console.error("Erro ao processar dados de sincronização:", error)
+      this.syncInProgress = false
+
+      // Notificar erro de sincronização
+      toast({
+        title: "Erro de sincronização",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      })
     }
   }
 
-  private requestLatestData = () => {
-    realtimeService.emit(SyncEvent.DATA_REQUESTED, {
-      clientId: realtimeService.getClientId(),
-      timestamp: Date.now(),
-    })
-  }
+  // Mesclar dados recebidos com dados locais
+  private async mergeData(
+    receivedData: Record<string, any>,
+    receivedMetadata: Record<string, SyncMetadata>,
+  ): Promise<void> {
+    // Para cada tipo de dado
+    for (const key of Object.keys(receivedData)) {
+      if (!receivedData[key]) continue
 
-  private handleDataRequested = (data: any) => {
-    if (data.clientId === realtimeService.getClientId()) return
+      try {
+        // Obter dados e metadados locais
+        const localData = await storageService.loadData(key, null)
+        const metadataKey = `${key}_metadata`
+        const localMetadata = await storageService.loadData<SyncMetadata>(metadataKey, {
+          version: 0,
+          timestamp: 0,
+          clientId: this.clientId,
+        })
 
-    // Enviar dados atuais para o peer que solicitou
-    const currentData = this.getCurrentData()
-    realtimeService.emit(SyncEvent.DATA_RESPONSE, {
-      clientId: realtimeService.getClientId(),
-      targetClientId: data.clientId,
-      timestamp: Date.now(),
-      data: currentData,
-    })
-  }
+        // Verificar se os dados recebidos são mais recentes
+        if (this.isNewerData(receivedMetadata[key], localMetadata)) {
+          console.log(`Atualizando dados de ${key} com versão mais recente`)
 
-  private handleDataResponse = (data: any) => {
-    if (data.clientId === realtimeService.getClientId() || data.targetClientId !== realtimeService.getClientId()) return
+          // Salvar dados recebidos
+          await storageService.saveData(key, receivedData[key])
 
-    // Verificar se os dados recebidos são mais recentes
-    if (data.timestamp > this.lastSyncTimestamp) {
-      console.log("Recebendo dados atualizados de outro peer")
-      this.updateLocalData(data.data)
-      this.lastSyncTimestamp = data.timestamp
+          // Atualizar metadados
+          await storageService.saveData(metadataKey, {
+            version: receivedMetadata[key].version,
+            timestamp: Date.now(),
+            clientId: this.clientId,
+          })
+        } else {
+          console.log(`Mantendo dados locais de ${key} (versão mais recente)`)
+        }
+      } catch (error) {
+        console.error(`Erro ao mesclar dados de ${key}:`, error)
+      }
     }
-  }
 
-  private handleDataUpdated = (data: any) => {
-    if (data.clientId === realtimeService.getClientId()) return
-
-    // Atualizar dados locais com os dados recebidos
-    console.log("Recebendo atualização de dados de outro peer")
-    this.updateLocalData(data.data)
-    this.lastSyncTimestamp = data.timestamp
-  }
-
-  private checkForUpdates = () => {
-    // Verificar se há atualizações de dados
-    const currentTimestamp = Date.now()
-    if (currentTimestamp - this.lastSyncTimestamp > 60000) {
-      // Se passou mais de 1 minuto desde a última sincronização
-      this.requestLatestData()
-    }
-  }
-
-  private getCurrentData = () => {
-    // Obter todos os dados relevantes do localStorage
-    return {
-      tickets: localStorageService.getItem("tickets") || [],
-      guiches: localStorageService.getItem("guiches") || [],
-      users: localStorageService.getItem("users") || [],
-      settings: localStorageService.getItem("settings") || {},
-      stats: localStorageService.getItem("stats") || {},
-    }
-  }
-
-  private updateLocalData = (data: any) => {
-    // Atualizar dados locais com os dados recebidos
-    if (data.tickets) localStorageService.setItem("tickets", data.tickets)
-    if (data.guiches) localStorageService.setItem("guiches", data.guiches)
-    if (data.users) localStorageService.setItem("users", data.users)
-    if (data.settings) localStorageService.setItem("settings", data.settings)
-    if (data.stats) localStorageService.setItem("stats", data.stats)
-
-    // Criar um backup após receber dados atualizados
+    // Criar backup após sincronização
     backupService.createBackup("sync")
   }
 
-  public broadcastDataUpdate = () => {
-    // Enviar atualização de dados para todos os peers
-    const currentData = this.getCurrentData()
-    realtimeService.emit(SyncEvent.DATA_UPDATED, {
-      clientId: realtimeService.getClientId(),
+  // Verificar se os dados recebidos são mais recentes
+  private isNewerData(received: SyncMetadata, local: SyncMetadata): boolean {
+    // Verificar versão primeiro
+    if (received.version > local.version) {
+      return true
+    } else if (received.version < local.version) {
+      return false
+    }
+
+    // Se versões iguais, verificar timestamp
+    return received.timestamp > local.timestamp
+  }
+
+  // Manipular mudanças de dados
+  private handleDataChanged(data: any): void {
+    if (data.clientId === this.clientId) return
+
+    console.log(`Recebida notificação de alteração de dados para ${data.key}`)
+
+    // Solicitar sincronização para obter os dados atualizados
+    this.requestSync()
+  }
+
+  // Manipular erro de sincronização
+  private handleSyncError(data: any): void {
+    console.error("Erro de sincronização:", data)
+    this.syncInProgress = false
+
+    // Notificar usuário sobre o erro
+    if (data.clientId === this.clientId) {
+      toast({
+        title: "Erro de sincronização",
+        description: data.error || "Ocorreu um erro ao sincronizar os dados",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // Notificar outros clientes sobre mudanças de dados
+  public notifyDataChanged(key: string): void {
+    if (!realtimeService.isConnected()) return
+
+    realtimeService.emit(SyncEvent.DATA_CHANGED, {
+      clientId: this.clientId,
+      key,
       timestamp: Date.now(),
-      data: currentData,
     })
   }
 
-  public getConnectedPeersCount = (): number => {
-    return this.connectedPeers.size
+  // Forçar sincronização manual
+  public forceSyncNow(): void {
+    this.syncInProgress = false
+    this.requestSync()
   }
 
-  public isActive = (): boolean => {
-    return this.isInitialized
+  // Verificar se a sincronização está em andamento
+  public isSyncing(): boolean {
+    return this.syncInProgress
+  }
+
+  // Obter timestamp da última sincronização
+  public getLastSyncTime(): number {
+    return this.lastSyncTime
+  }
+
+  // Obter ID do cliente
+  public getClientId(): string {
+    return this.clientId
   }
 }
 

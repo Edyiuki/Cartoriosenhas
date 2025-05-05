@@ -1,7 +1,8 @@
 // Serviço para backup e restauração de dados
-import { localStorageService } from "./local-storage-service"
+import { storageService } from "./storage-service"
 import { realtimeService, RealtimeEvent } from "./realtime-service"
 import { toast } from "@/components/ui/use-toast"
+import { errorMonitoring } from "./error-monitoring"
 
 export class BackupService {
   private static instance: BackupService
@@ -34,7 +35,7 @@ export class BackupService {
   public startAutoBackup(): void {
     if (typeof window === "undefined" || this.autoBackupInterval) return
 
-    console.log("Iniciando backup automático a cada 30 segundos")
+    console.log("Iniciando backup automático a cada 5 minutos")
 
     this.autoBackupInterval = setInterval(() => {
       this.createBackup("auto")
@@ -83,16 +84,17 @@ export class BackupService {
   }
 
   // Criar backup
-  public createBackup(type: "manual" | "auto" | "daily"): string | null {
+  public async createBackup(type: "manual" | "auto" | "daily" | "sync"): Promise<string | null> {
     if (typeof window === "undefined") return null
 
     try {
       const backup: Record<string, any> = {}
 
       // Coletar dados de todas as chaves
-      this.backupKeys.forEach((key) => {
-        backup[key] = localStorageService.loadData(key, null)
-      })
+      for (const key of this.backupKeys) {
+        const data = await storageService.loadData(key, null)
+        backup[key] = data
+      }
 
       // Adicionar metadados
       const timestamp = new Date().toISOString()
@@ -102,13 +104,13 @@ export class BackupService {
           timestamp,
           type,
           version: "1.0",
-          clientId: realtimeService.getSocketId() || "unknown",
+          clientId: realtimeService.getClientId(),
         },
       }
 
       // Salvar backup
       const backupKey = `backup_${type}_${timestamp.replace(/[:.]/g, "-")}`
-      localStorageService.saveData(backupKey, backupData)
+      await storageService.saveData(backupKey, backupData)
 
       // Notificar sobre o backup
       if (type === "manual") {
@@ -127,16 +129,24 @@ export class BackupService {
           type,
           timestamp,
           size: JSON.stringify(backupData).length,
-          clientId: realtimeService.getSocketId(),
+          clientId: realtimeService.getClientId(),
         })
       }
 
       // Limpar backups antigos
-      this.cleanupOldBackups(type)
+      await this.cleanupOldBackups(type)
 
       return backupKey
     } catch (error) {
       console.error("Erro ao criar backup:", error)
+      errorMonitoring.logError({
+        message: "Erro ao criar backup",
+        source: "backup-service",
+        error: error instanceof Error ? error : new Error(String(error)),
+        timestamp: Date.now(),
+        userAgent: navigator.userAgent,
+        url: window.location.href,
+      })
 
       if (type === "manual") {
         toast({
@@ -151,22 +161,22 @@ export class BackupService {
   }
 
   // Restaurar backup
-  public restoreBackup(backupKey: string): boolean {
+  public async restoreBackup(backupKey: string): Promise<boolean> {
     if (typeof window === "undefined") return false
 
     try {
-      const backupData = localStorageService.loadData(backupKey, null)
+      const backupData = await storageService.loadData(backupKey, null)
 
       if (!backupData || !backupData.data) {
         throw new Error("Backup inválido ou corrompido")
       }
 
       // Restaurar dados
-      Object.entries(backupData.data).forEach(([key, value]) => {
+      for (const [key, value] of Object.entries(backupData.data)) {
         if (value !== null) {
-          localStorageService.saveData(key, value)
+          await storageService.saveData(key, value)
         }
-      })
+      }
 
       toast({
         title: "Backup restaurado com sucesso",
@@ -185,6 +195,14 @@ export class BackupService {
       return true
     } catch (error) {
       console.error("Erro ao restaurar backup:", error)
+      errorMonitoring.logError({
+        message: "Erro ao restaurar backup",
+        source: "backup-service",
+        error: error instanceof Error ? error : new Error(String(error)),
+        timestamp: Date.now(),
+        userAgent: navigator.userAgent,
+        url: window.location.href,
+      })
 
       toast({
         title: "Erro ao restaurar backup",
@@ -197,11 +215,11 @@ export class BackupService {
   }
 
   // Limpar backups antigos
-  private cleanupOldBackups(type: string): void {
+  private async cleanupOldBackups(type: string): Promise<void> {
     if (typeof window === "undefined") return
 
     try {
-      const keys = localStorageService.getAllKeys()
+      const keys = await storageService.getAllKeys()
       const backupPrefix = `backup_${type}_`
       const backupKeys = keys.filter((key) => key.startsWith(backupPrefix))
 
@@ -212,9 +230,9 @@ export class BackupService {
 
         // Remover os mais antigos
         const keysToRemove = backupKeys.slice(0, backupKeys.length - 10)
-        keysToRemove.forEach((key) => {
-          localStorageService.removeData(key)
-        })
+        for (const key of keysToRemove) {
+          await storageService.removeData(key)
+        }
 
         console.log(`Removidos ${keysToRemove.length} backups antigos do tipo ${type}`)
       }
@@ -224,34 +242,38 @@ export class BackupService {
   }
 
   // Listar todos os backups disponíveis
-  public listBackups(): Array<{
-    key: string
-    type: string
-    timestamp: string
-    size: number
-  }> {
+  public async listBackups(): Promise<
+    Array<{
+      key: string
+      type: string
+      timestamp: string
+      size: number
+    }>
+  > {
     if (typeof window === "undefined") return []
 
     try {
-      const keys = localStorageService.getAllKeys()
+      const keys = await storageService.getAllKeys()
       const backupKeys = keys.filter((key) => key.startsWith("backup_"))
 
-      return backupKeys
-        .map((key) => {
-          const backup = localStorageService.loadData(key, null)
-          const parts = key.split("_")
+      const backups = []
 
-          return {
-            key,
-            type: parts[1] || "unknown",
-            timestamp: backup?.metadata?.timestamp || "unknown",
-            size: JSON.stringify(backup).length,
-          }
+      for (const key of backupKeys) {
+        const backup = await storageService.loadData(key, null)
+        const parts = key.split("_")
+
+        backups.push({
+          key,
+          type: parts[1] || "unknown",
+          timestamp: backup?.metadata?.timestamp || "unknown",
+          size: JSON.stringify(backup).length,
         })
-        .sort((a, b) => {
-          // Ordenar do mais recente para o mais antigo
-          return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-        })
+      }
+
+      // Ordenar do mais recente para o mais antigo
+      return backups.sort((a, b) => {
+        return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      })
     } catch (error) {
       console.error("Erro ao listar backups:", error)
       return []
@@ -259,11 +281,11 @@ export class BackupService {
   }
 
   // Excluir um backup específico
-  public deleteBackup(backupKey: string): boolean {
+  public async deleteBackup(backupKey: string): Promise<boolean> {
     if (typeof window === "undefined") return false
 
     try {
-      localStorageService.removeData(backupKey)
+      await storageService.removeData(backupKey)
       return true
     } catch (error) {
       console.error("Erro ao excluir backup:", error)

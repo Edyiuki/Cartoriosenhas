@@ -4,20 +4,48 @@ import type React from "react"
 
 import { useEffect, useState } from "react"
 import { initRealtimeService, realtimeService, RealtimeEvent } from "@/lib/realtime-service"
+import { backupService } from "@/lib/backup-service"
+import { syncService } from "@/lib/sync-service"
+import { errorMonitoring } from "@/lib/error-monitoring"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle, Wifi, WifiOff, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { toast } from "@/components/ui/use-toast"
 
-export function RealtimeProvider({ children }: { children: React.ReactNode }) {
+interface RealtimeProviderProps {
+  children: React.ReactNode
+}
+
+export function RealtimeProvider({ children }: RealtimeProviderProps) {
   const [isConnected, setIsConnected] = useState(true) // Assumir conectado inicialmente
   const [showReconnecting, setShowReconnecting] = useState(false)
   const [connectionError, setConnectionError] = useState<string | null>(null)
   const [clientId, setClientId] = useState<string | null>(null)
 
   useEffect(() => {
-    // Inicializar o serviço de tempo real
-    initRealtimeService()
+    // Inicializar serviços
+    try {
+      // Inicializar monitoramento de erros primeiro
+      errorMonitoring.initialize()
+
+      // Inicializar serviço de tempo real
+      initRealtimeService()
+
+      // Inicializar backup automático
+      backupService.startAutoBackup()
+
+      // Inicializar serviço de sincronização
+      syncService.initialize()
+
+      console.log("Todos os serviços inicializados com sucesso")
+    } catch (error) {
+      console.error("Erro ao inicializar serviços:", error)
+      toast({
+        title: "Erro de inicialização",
+        description: "Alguns serviços não puderam ser inicializados corretamente.",
+        variant: "destructive",
+      })
+    }
 
     // Configurar listeners para status de conexão
     const handleConnect = () => {
@@ -54,6 +82,14 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
     const handleError = (error: any) => {
       setConnectionError(error?.message || "Erro desconhecido")
+      errorMonitoring.logError({
+        message: error?.message || "Erro de conexão desconhecido",
+        source: "realtime-service",
+        error: error instanceof Error ? error : new Error(String(error)),
+        timestamp: Date.now(),
+        userAgent: navigator.userAgent,
+        url: window.location.href,
+      })
     }
 
     realtimeService.on(RealtimeEvent.CONNECT, handleConnect)
