@@ -203,17 +203,19 @@ class SyncService {
 
       // Coletar dados e metadados para cada chave
       for (const key of this.dataKeys) {
-        const data = await localStorageService.getItem(key)
+        // Usar loadData em vez de getItem
+        const data = await localStorageService.loadData(key, null)
         if (data) {
           syncData[key] = data
 
           // Obter metadados de sincronização
           const metadataKey = `${key}_metadata`
-          const metadata = (await localStorageService.getItem(metadataKey)) || {
+          // Usar loadData em vez de getItem
+          const metadata = await localStorageService.loadData<SyncMetadata>(metadataKey, {
             version: 1,
             timestamp: Date.now(),
             clientId: this.clientId,
-          }
+          })
 
           syncMetadata[key] = metadata
         }
@@ -229,6 +231,13 @@ class SyncService {
       })
     } catch (error) {
       console.error("Erro ao coletar dados para sincronização:", error)
+
+      // Notificar erro
+      realtimeService.emit(SyncEvent.SYNC_ERROR, {
+        clientId: requestClientId,
+        error: "Erro ao coletar dados para sincronização",
+        timestamp: Date.now(),
+      })
     }
   }
 
@@ -284,23 +293,27 @@ class SyncService {
 
       try {
         // Obter dados e metadados locais
-        const localData = await localStorageService.getItem(key)
+        // Usar loadData em vez de getItem
+        const localData = await localStorageService.loadData(key, null)
         const metadataKey = `${key}_metadata`
-        const localMetadata = (await localStorageService.getItem(metadataKey)) || {
+        // Usar loadData em vez de getItem
+        const localMetadata = await localStorageService.loadData<SyncMetadata>(metadataKey, {
           version: 0,
           timestamp: 0,
           clientId: this.clientId,
-        }
+        })
 
         // Verificar se os dados recebidos são mais recentes
         if (this.isNewerData(receivedMetadata[key], localMetadata)) {
           console.log(`Atualizando dados de ${key} com versão mais recente`)
 
           // Salvar dados recebidos
-          await localStorageService.setItem(key, receivedData[key])
+          // Usar saveData em vez de setItem
+          await localStorageService.saveData(key, receivedData[key])
 
           // Atualizar metadados
-          await localStorageService.setItem(metadataKey, {
+          // Usar saveData em vez de setItem
+          await localStorageService.saveData(metadataKey, {
             version: receivedMetadata[key].version,
             timestamp: Date.now(),
             clientId: this.clientId,
