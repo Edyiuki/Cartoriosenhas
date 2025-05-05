@@ -19,6 +19,7 @@ export class BackupService {
     "contadores",
     "historicoAtendimentos",
   ]
+  private lastBackupInfo: { timestamp: number; key: string; type: string } | null = null
 
   private constructor() {
     // Construtor privado para singleton
@@ -111,6 +112,13 @@ export class BackupService {
       // Salvar backup
       const backupKey = `backup_${type}_${timestamp.replace(/[:.]/g, "-")}`
       await storageService.saveData(backupKey, backupData)
+
+      // Atualizar informações do último backup
+      this.lastBackupInfo = {
+        timestamp: new Date(timestamp).getTime(),
+        key: backupKey,
+        type,
+      }
 
       // Notificar sobre o backup
       if (type === "manual") {
@@ -238,6 +246,48 @@ export class BackupService {
       }
     } catch (error) {
       console.error("Erro ao limpar backups antigos:", error)
+    }
+  }
+
+  // Obter informações do último backup
+  public getLastBackup(): { timestamp: number; key: string; type: string } | null {
+    if (this.lastBackupInfo) {
+      return this.lastBackupInfo
+    }
+
+    // Se não temos informações em memória, tentamos buscar do armazenamento
+    this.loadLastBackupInfo()
+    return this.lastBackupInfo
+  }
+
+  // Carregar informações do último backup do armazenamento
+  private async loadLastBackupInfo(): Promise<void> {
+    try {
+      if (typeof window === "undefined") return
+
+      const keys = await storageService.getAllKeys()
+      const backupKeys = keys.filter((key) => key.startsWith("backup_"))
+
+      if (backupKeys.length === 0) {
+        return
+      }
+
+      // Ordenar por data (mais recentes primeiro)
+      backupKeys.sort().reverse()
+
+      // Pegar o backup mais recente
+      const latestBackupKey = backupKeys[0]
+      const backup = await storageService.loadData(latestBackupKey, null)
+
+      if (backup && backup.metadata && backup.metadata.timestamp) {
+        this.lastBackupInfo = {
+          timestamp: new Date(backup.metadata.timestamp).getTime(),
+          key: latestBackupKey,
+          type: backup.metadata.type || "unknown",
+        }
+      }
+    } catch (error) {
+      console.error("Erro ao carregar informações do último backup:", error)
     }
   }
 

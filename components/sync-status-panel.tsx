@@ -29,20 +29,13 @@ export function SyncStatusPanel() {
   }
 
   // Função para criar backup manual
-  const createManualBackup = () => {
-    const backup = backupService.createBackup("manual")
-    if (backup) {
-      setLastBackup(formatDate(backup.timestamp))
-      toast({
-        title: "Backup criado",
-        description: `Backup criado com sucesso: ${formatDate(backup.timestamp)}`,
-      })
-    } else {
-      toast({
-        title: "Erro ao criar backup",
-        description: "Não foi possível criar o backup.",
-        variant: "destructive",
-      })
+  const createManualBackup = async () => {
+    const backupKey = await backupService.createBackup("manual")
+    if (backupKey) {
+      const lastBackupInfo = backupService.getLastBackup()
+      if (lastBackupInfo) {
+        setLastBackup(formatDate(lastBackupInfo.timestamp))
+      }
     }
   }
 

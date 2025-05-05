@@ -1,7 +1,7 @@
 // Serviço de sincronização aprimorado para resolver conflitos de dados
 import { realtimeService, RealtimeEvent } from "./realtime-service"
 import { backupService } from "./backup-service"
-import { storageService } from "./storage-service"
+import { localStorageService } from "./local-storage-service"
 import { toast } from "@/components/ui/use-toast"
 
 // Tipos de eventos de sincronização
@@ -11,6 +11,8 @@ export enum SyncEvent {
   SYNC_COMPLETE = "sync:complete",
   SYNC_ERROR = "sync:error",
   DATA_CHANGED = "sync:data-changed",
+  PEER_CONNECTED = "sync:peer-connected",
+  PEER_DISCONNECTED = "sync:peer-disconnected",
 }
 
 // Interface para metadados de sincronização
@@ -38,6 +40,7 @@ class SyncService {
     "configuracoes",
   ]
   private clientId = ""
+  private connectedPeers: Set<string> = new Set() // Rastrear peers conectados
 
   private constructor() {
     // Construtor privado para singleton
@@ -69,11 +72,16 @@ class SyncService {
     realtimeService.on(SyncEvent.PROVIDE_SYNC, this.handleSyncData.bind(this))
     realtimeService.on(SyncEvent.SYNC_ERROR, this.handleSyncError.bind(this))
     realtimeService.on(SyncEvent.DATA_CHANGED, this.handleDataChanged.bind(this))
+    realtimeService.on(SyncEvent.PEER_CONNECTED, this.handlePeerConnected.bind(this))
+    realtimeService.on(SyncEvent.PEER_DISCONNECTED, this.handlePeerDisconnected.bind(this))
 
     // Iniciar verificação periódica de sincronização
     this.syncInterval = setInterval(() => {
       this.checkAndRequestSync()
     }, this.syncIntervalTime)
+
+    // Anunciar conexão para outros peers
+    this.announceConnection()
 
     this.isInitialized = true
   }
@@ -87,6 +95,8 @@ class SyncService {
     realtimeService.off(SyncEvent.PROVIDE_SYNC, this.handleSyncData.bind(this))
     realtimeService.off(SyncEvent.SYNC_ERROR, this.handleSyncError.bind(this))
     realtimeService.off(SyncEvent.DATA_CHANGED, this.handleDataChanged.bind(this))
+    realtimeService.off(SyncEvent.PEER_CONNECTED, this.handlePeerConnected.bind(this))
+    realtimeService.off(SyncEvent.PEER_DISCONNECTED, this.handlePeerDisconnected.bind(this))
 
     // Parar intervalo de sincronização
     if (this.syncInterval) {
@@ -102,7 +112,42 @@ class SyncService {
     // Ao conectar, verificar se precisa sincronizar
     setTimeout(() => {
       this.requestSync()
+      // Anunciar conexão para outros peers
+      this.announceConnection()
     }, 2000) // Aguardar 2 segundos para garantir que a conexão está estável
+  }
+
+  // Anunciar conexão para outros peers
+  private announceConnection(): void {
+    if (!realtimeService.isConnected()) return
+
+    realtimeService.emit(SyncEvent.PEER_CONNECTED, {
+      clientId: this.clientId,
+      timestamp: Date.now(),
+    })
+  }
+
+  // Manipular conexão de peer
+  private handlePeerConnected(data: any): void {
+    if (data.clientId === this.clientId) return
+
+    console.log(`Peer conectado: ${data.clientId}`)
+    this.connectedPeers.add(data.clientId)
+
+    // Responder anunciando nossa presença
+    realtimeService.emit(SyncEvent.PEER_CONNECTED, {
+      clientId: this.clientId,
+      timestamp: Date.now(),
+      isResponse: true,
+    })
+  }
+
+  // Manipular desconexão de peer
+  private handlePeerDisconnected(data: any): void {
+    if (data.clientId === this.clientId) return
+
+    console.log(`Peer desconectado: ${data.clientId}`)
+    this.connectedPeers.delete(data.clientId)
   }
 
   // Verificar se é necessário sincronizar e solicitar sincronização
@@ -158,17 +203,17 @@ class SyncService {
 
       // Coletar dados e metadados para cada chave
       for (const key of this.dataKeys) {
-        const data = await storageService.loadData(key, null)
+        const data = await localStorageService.getItem(key)
         if (data) {
           syncData[key] = data
 
           // Obter metadados de sincronização
           const metadataKey = `${key}_metadata`
-          const metadata = await storageService.loadData<SyncMetadata>(metadataKey, {
+          const metadata = (await localStorageService.getItem(metadataKey)) || {
             version: 1,
             timestamp: Date.now(),
             clientId: this.clientId,
-          })
+          }
 
           syncMetadata[key] = metadata
         }
@@ -239,23 +284,23 @@ class SyncService {
 
       try {
         // Obter dados e metadados locais
-        const localData = await storageService.loadData(key, null)
+        const localData = await localStorageService.getItem(key)
         const metadataKey = `${key}_metadata`
-        const localMetadata = await storageService.loadData<SyncMetadata>(metadataKey, {
+        const localMetadata = (await localStorageService.getItem(metadataKey)) || {
           version: 0,
           timestamp: 0,
           clientId: this.clientId,
-        })
+        }
 
         // Verificar se os dados recebidos são mais recentes
         if (this.isNewerData(receivedMetadata[key], localMetadata)) {
           console.log(`Atualizando dados de ${key} com versão mais recente`)
 
           // Salvar dados recebidos
-          await storageService.saveData(key, receivedData[key])
+          await localStorageService.setItem(key, receivedData[key])
 
           // Atualizar metadados
-          await storageService.saveData(metadataKey, {
+          await localStorageService.setItem(metadataKey, {
             version: receivedMetadata[key].version,
             timestamp: Date.now(),
             clientId: this.clientId,
@@ -340,6 +385,25 @@ class SyncService {
   // Obter ID do cliente
   public getClientId(): string {
     return this.clientId
+  }
+
+  // Métodos necessários para o painel de status de sincronização
+  public getConnectedPeersCount(): number {
+    return this.connectedPeers.size
+  }
+
+  public isActive(): boolean {
+    return this.isInitialized
+  }
+
+  public broadcastDataUpdate(): void {
+    // Notificar mudanças em todas as chaves de dados
+    for (const key of this.dataKeys) {
+      this.notifyDataChanged(key)
+    }
+
+    // Solicitar sincronização imediata
+    this.forceSyncNow()
   }
 }
 

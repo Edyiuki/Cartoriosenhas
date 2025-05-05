@@ -34,7 +34,7 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
       // Inicializar backup automático
       backupService.startAutoBackup()
 
-      // Inicializar serviço de sincronização
+      // Função de inicialização correta
       syncService.initialize()
 
       console.log("Todos os serviços inicializados com sucesso")
