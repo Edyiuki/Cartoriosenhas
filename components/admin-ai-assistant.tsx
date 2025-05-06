@@ -6,19 +6,31 @@ import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Brain, Send, BarChart3, Users, Clock, ArrowRight } from "lucide-react"
+import { Brain, Send, BarChart3, Users, Clock, ArrowRight, Globe, RefreshCw } from "lucide-react"
 import { obterEstatisticasAtendimento, obterEstatisticasGuiche } from "@/lib/estatisticas"
-import { processarPergunta } from "@/lib/ia-service"
+import { processarPergunta, iniciarSessaoChat } from "@/lib/ia-service"
 
 export function AdminAIAssistant() {
   const [pergunta, setPergunta] = useState("")
-  const [historico, setHistorico] = useState<Array<{ tipo: "pergunta" | "resposta"; texto: string }>>([])
+  const [historico, setHistorico] = useState<Array<{ tipo: "pergunta" | "resposta"; texto: string; fonte?: string }>>(
+    [],
+  )
   const [carregando, setCarregando] = useState(false)
   const [estatisticas, setEstatisticas] = useState<any>({})
   const [thothAtivo, setThothAtivo] = useState(false)
+  const [sugestoes, setSugestoes] = useState<string[]>([])
+  const [buscandoWeb, setBuscandoWeb] = useState(false)
+  const [usuarioId, setUsuarioId] = useState<string>("")
+  const [tempoResposta, setTempoResposta] = useState<number | null>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    // Gerar ID único para o usuário se não existir
+    const userId =
+      localStorage.getItem("thoth_user_id") || `user_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+    localStorage.setItem("thoth_user_id", userId)
+    setUsuarioId(userId)
+
     // Carregar estatísticas para o assistente IA usar
     const carregarDados = async () => {
       try {
@@ -38,14 +50,10 @@ export function AdminAIAssistant() {
 
     carregarDados()
 
-    // Adicionar mensagem inicial do assistente
-    setHistorico([
-      {
-        tipo: "resposta",
-        texto:
-          "Olá! Sou Thoth, seu assistente IA do sistema de senhas. Como posso ajudar você hoje? Posso fornecer análises sobre o desempenho dos guichês, sugerir otimizações ou responder perguntas sobre o sistema.",
-      },
-    ])
+    // Iniciar sessão de chat
+    const sessao = iniciarSessaoChat(userId)
+    setHistorico(sessao.mensagensIniciais)
+    setSugestoes(sessao.sugestoes || [])
 
     // Ativar Thoth na primeira interação
     setThothAtivo(true)
@@ -61,33 +69,54 @@ export function AdminAIAssistant() {
     }
   }, [historico])
 
-  const handleEnviarPergunta = async () => {
-    if (!pergunta.trim()) return
+  const handleEnviarPergunta = async (perguntaTexto: string = pergunta) => {
+    if (!perguntaTexto.trim()) return
+
+    // Limpar campo de pergunta se for a pergunta digitada
+    if (perguntaTexto === pergunta) {
+      setPergunta("")
+    }
 
     // Ativar animação do Thoth
     setThothAtivo(true)
 
     // Adicionar pergunta ao histórico
-    setHistorico((prev) => [...prev, { tipo: "pergunta", texto: pergunta }])
+    setHistorico((prev) => [...prev, { tipo: "pergunta", texto: perguntaTexto }])
 
     setCarregando(true)
+    setBuscandoWeb(true)
+    setTempoResposta(null)
 
     try {
       // Usar o serviço de IA para processar a pergunta
-      const resposta = await processarPergunta(pergunta, {
+      const resposta = await processarPergunta(perguntaTexto, {
         totalAtendimentos: estatisticas.gerais?.totalAtendimentos,
         tempoMedio: estatisticas.gerais?.tempoMedioAtendimento,
         produtividade: estatisticas.gerais?.produtividadeMedia,
         estatisticas: estatisticas,
+        usuarioId: usuarioId,
       })
 
-      // Formatar resposta com fonte se disponível
-      const textoResposta = resposta.fonte ? `${resposta.texto}\n\n_Fonte: ${resposta.fonte}_` : resposta.texto
+      setBuscandoWeb(false)
+      setTempoResposta(resposta.tempoResposta || null)
 
       // Adicionar resposta ao histórico
-      setHistorico((prev) => [...prev, { tipo: "resposta", texto: textoResposta }])
+      setHistorico((prev) => [
+        ...prev,
+        {
+          tipo: "resposta",
+          texto: resposta.texto,
+          fonte: resposta.fonte,
+        },
+      ])
+
+      // Atualizar sugestões baseadas na resposta
+      if (resposta.sugestoes) {
+        setSugestoes(resposta.sugestoes)
+      }
     } catch (error) {
       console.error("Erro ao processar pergunta:", error)
+      setBuscandoWeb(false)
       setHistorico((prev) => [
         ...prev,
         {
@@ -97,7 +126,6 @@ export function AdminAIAssistant() {
       ])
     } finally {
       setCarregando(false)
-      setPergunta("")
 
       // Desativar animação do Thoth após um tempo
       setTimeout(() => {
@@ -146,9 +174,18 @@ export function AdminAIAssistant() {
                           <img src="/thoth-icon.png" alt="Thoth" className="w-full h-full object-cover" />
                         </div>
                         <span className="text-sm font-medium text-amber-600">Thoth</span>
+
+                        {item.fonte && (
+                          <span className="ml-2 text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full flex items-center">
+                            <Globe className="h-3 w-3 mr-1" />
+                            Fonte externa
+                          </span>
+                        )}
                       </div>
                     )}
                     <p className="text-sm whitespace-pre-line">{item.texto}</p>
+
+                    {item.fonte && <div className="mt-2 text-xs text-gray-500 italic">Fonte: {item.fonte}</div>}
                   </div>
                 </div>
               ))}
@@ -160,37 +197,74 @@ export function AdminAIAssistant() {
                       <div className="w-6 h-6 rounded-full overflow-hidden animate-bounce">
                         <img src="/thoth-icon.png" alt="Thoth" className="w-full h-full object-cover" />
                       </div>
-                      <div className="flex gap-1">
-                        <div
-                          className="w-2 h-2 rounded-full bg-amber-600 animate-bounce"
-                          style={{ animationDelay: "0ms" }}
-                        ></div>
-                        <div
-                          className="w-2 h-2 rounded-full bg-amber-600 animate-bounce"
-                          style={{ animationDelay: "150ms" }}
-                        ></div>
-                        <div
-                          className="w-2 h-2 rounded-full bg-amber-600 animate-bounce"
-                          style={{ animationDelay: "300ms" }}
-                        ></div>
-                      </div>
+
+                      {buscandoWeb ? (
+                        <div className="flex items-center gap-2">
+                          <RefreshCw className="h-3 w-3 animate-spin text-amber-600" />
+                          <span className="text-xs text-amber-600">Buscando informações na internet...</span>
+                        </div>
+                      ) : (
+                        <div className="flex gap-1">
+                          <div
+                            className="w-2 h-2 rounded-full bg-amber-600 animate-bounce"
+                            style={{ animationDelay: "0ms" }}
+                          ></div>
+                          <div
+                            className="w-2 h-2 rounded-full bg-amber-600 animate-bounce"
+                            style={{ animationDelay: "150ms" }}
+                          ></div>
+                          <div
+                            className="w-2 h-2 rounded-full bg-amber-600 animate-bounce"
+                            style={{ animationDelay: "300ms" }}
+                          ></div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
               )}
             </div>
 
-            <div className="flex gap-2">
-              <Input
-                placeholder="Faça uma pergunta ao assistente IA Thoth..."
-                value={pergunta}
-                onChange={(e) => setPergunta(e.target.value)}
-                onKeyDown={handleKeyDown}
-                disabled={carregando}
-              />
-              <Button onClick={handleEnviarPergunta} disabled={carregando || !pergunta.trim()}>
-                <Send className="h-4 w-4" />
-              </Button>
+            <div className="flex flex-col gap-2">
+              {sugestoes.length > 0 && !carregando && (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {sugestoes.slice(0, 3).map((sugestao, index) => (
+                    <Button
+                      key={index}
+                      variant="outline"
+                      size="sm"
+                      className="text-xs bg-gray-50 hover:bg-gray-100 text-gray-700"
+                      onClick={() => handleEnviarPergunta(sugestao)}
+                    >
+                      {sugestao}
+                    </Button>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Faça uma pergunta ao assistente IA Thoth..."
+                  value={pergunta}
+                  onChange={(e) => setPergunta(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  disabled={carregando}
+                  className="border-teal-200 focus:border-teal-400 focus:ring-teal-400"
+                />
+                <Button
+                  onClick={() => handleEnviarPergunta()}
+                  disabled={carregando || !pergunta.trim()}
+                  className="bg-teal-600 hover:bg-teal-700"
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
+
+              {tempoResposta && (
+                <div className="text-xs text-gray-500 text-right mt-1">
+                  Resposta gerada em {(tempoResposta / 1000).toFixed(2)}s
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -213,8 +287,7 @@ export function AdminAIAssistant() {
                 variant="outline"
                 className="w-full justify-start text-left"
                 onClick={() => {
-                  setPergunta("Qual é o desempenho atual dos guichês?")
-                  handleEnviarPergunta()
+                  handleEnviarPergunta("Qual é o desempenho atual dos guichês?")
                 }}
               >
                 <BarChart3 className="h-4 w-4 mr-2" />
@@ -225,8 +298,7 @@ export function AdminAIAssistant() {
                 variant="outline"
                 className="w-full justify-start text-left"
                 onClick={() => {
-                  setPergunta("Como posso otimizar o fluxo de atendimento?")
-                  handleEnviarPergunta()
+                  handleEnviarPergunta("Como posso otimizar o fluxo de atendimento?")
                 }}
               >
                 <ArrowRight className="h-4 w-4 mr-2" />
@@ -237,8 +309,7 @@ export function AdminAIAssistant() {
                 variant="outline"
                 className="w-full justify-start text-left"
                 onClick={() => {
-                  setPergunta("Quais são os tempos médios de atendimento?")
-                  handleEnviarPergunta()
+                  handleEnviarPergunta("Quais são os tempos médios de atendimento?")
                 }}
               >
                 <Clock className="h-4 w-4 mr-2" />
@@ -249,8 +320,7 @@ export function AdminAIAssistant() {
                 variant="outline"
                 className="w-full justify-start text-left"
                 onClick={() => {
-                  setPergunta("Quem é você, Thoth?")
-                  handleEnviarPergunta()
+                  handleEnviarPergunta("Quem é você, Thoth?")
                 }}
               >
                 <Users className="h-4 w-4 mr-2" />
@@ -287,7 +357,7 @@ export function AdminAIAssistant() {
                 <div className="bg-amber-100 text-amber-800 rounded-full h-5 w-5 flex items-center justify-center flex-shrink-0 mt-0.5">
                   3
                 </div>
-                <span>Pesquisa de soluções na internet e uso de outras IAs</span>
+                <span>Pesquisa de soluções na internet em tempo real</span>
               </li>
               <li className="flex items-start gap-2">
                 <div className="bg-amber-100 text-amber-800 rounded-full h-5 w-5 flex items-center justify-center flex-shrink-0 mt-0.5">
